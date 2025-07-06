@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>麻雀戦績結果</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        .top-player {
+            background-color: gold !important;
+            font-weight: bold !important;
+            color: black !important;
+        }
+    
+        .last-player {
+            background-color: #ffcccc !important;
+            font-weight: bold !important;
+            color: black !important;
+        }
+
+        .score-toggle {
+            color: inherit !important;
+            text-decoration: none !important;
+        }
+    
+        .score-toggle:hover {
+            color: inherit !important;
+            text-decoration: underline dotted !important;
+        }
+    
+        .toggle-icon {
+            font-size: 0.8em;
+            color: #888;  /* 薄いグレー */
+        }
+    </style>
+    <!-- PWA用のマニフェストファイルへのリンク -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <!-- スマホのアドレスバーなどのテーマカラー -->
+    <meta name="theme-color" content="#007bff">
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- ナビゲーションバー -->
+        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+            <a class="navbar-brand" href="#">麻雀戦績管理</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" 
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">麻雀戦績入力</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="{{ url_for('results') }}">戦績一覧</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('add_player') }}">プレイヤー情報追加</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('players') }}">プレイヤー情報一覧</a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <h1 class="my-4">ゲーム結果</h1>
+        <form method="get" class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label for="date" class="form-label">日付</label>
+                <input type="date" name="date" class="form-control" value="{{ filter_date }}">
+            </div>
+            <div class="col-md-3">
+                <label for="player" class="form-label">プレイヤー</label>
+                <select name="player" class="form-select">
+                    <option value="">-- 選択 --</option>
+                    {% for p in players %}
+                        <option value="{{ p.name }}" {% if p.name == filter_player %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="rank" class="form-label">順位</label>
+                <select name="rank" class="form-select">
+                    <option value="">-- 選択 --</option>
+                    {% for i in range(1, 5) %}
+                        <option value="{{ i }}" {% if filter_rank == i|string %}selected{% endif %}>{{ i }}位</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 align-self-end">
+                <button type="submit" class="btn btn-primary">検索</button>
+                <a href="{{ url_for('results') }}" class="btn btn-secondary">リセット</a>
+            </div>
+        </form>        
+          
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>ゲーム日</th>
+                    <th>ゲーム数</th>
+                    {% for player in players %}
+                        <th>{{ player.name }}</th>
+                    {% endfor %}
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <script>
+                // Bootstrap Collapse イベントでアイコンを切り替え
+                document.addEventListener("DOMContentLoaded", function () {
+                    const toggles = document.querySelectorAll('.score-toggle');
+            
+                    toggles.forEach(toggle => {
+                        const icon = toggle.querySelector('.toggle-icon');
+                        const collapseId = toggle.getAttribute('href');
+                        const collapseEl = document.querySelector(collapseId);
+            
+                        collapseEl.addEventListener('show.bs.collapse', () => {
+                            icon.textContent = "▼";
+                        });
+                        collapseEl.addEventListener('hide.bs.collapse', () => {
+                            icon.textContent = "▶";
+                        });
+                    });
+                });
+            </script>
+            
+            <tbody>
+                {% for row in table_data %}
+                    {% if row.type == "game" %}
+                    <tr>
+                        <td>{{ row.date }}</td>
+                        <td>{{ row.game_num }}</td>
+                        {% for player in players %}
+                        {% set info = row.scores.get(player.name) %}
+                        <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
+                            {% if info %}
+                                <a class="d-inline-flex align-items-center score-toggle text-decoration-none"
+                                   data-bs-toggle="collapse"
+                                   href="#detail-{{ row.game_id }}-{{ loop.index0 }}"
+                                   role="button"
+                                   aria-expanded="false"
+                                   aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                                    <span>{{ info.score }} 点</span>
+                                    <span class="ms-1 toggle-icon">▶</span>
+                                </a><br>{{ info.rank }}位
+                    
+                                <div class="collapse mt-1" id="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                                    <small>
+                                        原点: {{ info.raw }}<br>
+                                        ウマ: {% if info.uma >= 0 %}+{% endif %}{{ info.uma }}<br>
+                                        オカ: {% if info.oka >= 0 %}+{% endif %}{{ info.oka }}
+                                    </small>
+                                </div>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    {% endfor %}                    
+                        <td>
+                            <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
+                                <button type="submit" class="btn btn-danger btn-sm">削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% elif row.type == "summary" %}
+                    <tr class="table-info">
+                        <td colspan="2"><strong>{{ row.date }} 合計</strong></td>
+                        {% for player in players %}
+                            {% set info = row.totals.get(player.name) %}
+                            <td>
+                                {% if info %}
+                                    {{ info.total }} 点<br>{{ info.rank }}位
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                        <td>—</td>
+                    </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>            
+        </table>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/static/sw.js')
+              .then(registration => {
+                console.log('Service Worker registered with scope:', registration.scope);
+              })
+              .catch(err => {
+                console.log('Service Worker registration failed:', err);
+              });
+          });
+        }
+      </script>      
+</body>
+</html>

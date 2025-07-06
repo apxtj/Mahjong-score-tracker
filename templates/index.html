@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>麻雀戦績入力</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- PWA用のマニフェストファイルへのリンク -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <!-- スマホのアドレスバーなどのテーマカラー -->
+    <meta name="theme-color" content="#007bff">
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- ナビゲーションバー -->
+        <nav class="navbar navbar-expand-lg navbar-light bg-light">
+            <a class="navbar-brand" href="#">麻雀戦績管理</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('index') }}">戦績入力</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('results') }}">戦績</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('add_player') }}">プレイヤー情報追加</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('players') }}">プレイヤー情報一覧</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <h1 class="my-4">麻雀戦績入力</h1>
+
+        {% if error %}
+            <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST">
+            {% set fd = form_data or {} %}
+
+            {% set winds = ["東家", "南家", "西家", "北家"] %}
+            {% for i in range(1, 5) %}
+            <div class="mb-3">
+                <label for="player{{ i }}_id" class="form-label">{{ winds[i-1] }}</label>
+                <select name="player{{ i }}_id" class="form-control" required>
+                    <option value="" {% if fd["player" ~ i ~ "_id"] == "" %}selected{% endif %}>-- プレイヤーを選択 --</option>
+                    {% for player in players %}
+                    <option value="{{ player.id }}" {% if fd["player" ~ i ~ "_id"]|string == player.id|string %}selected{% endif %}>
+                        {{ player.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <input type="number" name="score{{ i }}" class="form-control mt-2" placeholder="持ち点"
+                       value="{{ fd["score" ~ i] if fd["score" ~ i] is defined else 0 }}" required>
+            </div>
+            {% endfor %}
+
+            <!-- ボタンをラップして横並び + 間隔を調整 -->
+            <div class="d-flex gap-5 mb-3">
+                <button type="submit" class="btn btn-primary">結果を表示</button>
+                <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#umaOkaSettings" aria-expanded="false" aria-controls="umaOkaSettings">
+                    ウマ・オカ設定を表示／非表示
+                </button>
+            </div>
+
+            <div class="collapse" id="umaOkaSettings">
+            <div class="card card-body">
+                <div class="mb-3">
+                    <label for="oka" class="form-label">オカ (全体のボーナス点数)</label>
+                    <input type="number" name="oka" class="form-control" placeholder="例: 30000"
+                        value="{{ form_data.oka if form_data and form_data.oka is defined else 0 }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="uma" class="form-label">ウマ (順位ごとのボーナスをカンマ区切りで4つ入力)</label>
+                    <input type="text" name="uma" class="form-control" placeholder="例: 30000,10000,-10000,-30000"
+                        value="{{ form_data.uma if form_data and form_data.uma is defined else '30000,10000,-10000,-30000' }}" required>
+                    <small class="form-text text-muted">順位1位から4位までのウマ点数をカンマで区切って入力してください。</small>
+                </div>
+            </div>
+            </div>
+
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/static/sw.js')
+              .then(registration => {
+                console.log('Service Worker registered with scope:', registration.scope);
+              })
+              .catch(err => {
+                console.log('Service Worker registration failed:', err);
+              });
+          });
+        }
+    </script>      
+</body>
+</html>

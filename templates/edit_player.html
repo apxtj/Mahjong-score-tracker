@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>プレイヤー名の編集</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- PWA用のマニフェストファイルへのリンク -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <!-- スマホのアドレスバーなどのテーマカラー -->
+    <meta name="theme-color" content="#007bff">
+</head>
+<body>
+    <div class="container-fluid mt-5">
+        <h2>プレイヤー名の編集</h2>
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">新しい名前</label>
+                <input type="text" name="name" class="form-control" value="{{ player.name }}" required>
+            </div>
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a href="{{ url_for('players') }}" class="btn btn-secondary">戻る</a>
+        </form>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/static/sw.js')
+            .then(registration => {
+                console.log('Service Worker registered with scope:', registration.scope);
+            })
+            .catch(err => {
+                console.log('Service Worker registration failed:', err);
+            });
+        });
+        }
+    </script>
+</body>
+</html>
