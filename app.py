@@ -6,12 +6,13 @@ from flask import Flask, render_template, request, redirect, url_for, session
 from flask import flash
 from collections import defaultdict
 from flask import request
+import os
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
 
 # SQLiteデータベースの設定
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mahjong.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///mahjong.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
