@@ -34,6 +34,8 @@
             <div class="alert alert-danger" role="alert">{{ error }}</div>
         {% endif %}
 
+        <p id="score-total" class="text-muted mt-2">合計: 0 点</p>
+
         <form method="POST">
             {% set fd = form_data or {} %}
 
@@ -49,8 +51,8 @@
                     </option>
                     {% endfor %}
                 </select>
-                <input type="number" name="score{{ i }}" class="form-control mt-2" placeholder="持ち点"
-                       value="{{ fd["score" ~ i] if fd["score" ~ i] is defined else 0 }}" required>
+                <input type="number" id="score{{ i }}" name="score{{ i }}" class="form-control mt-2" placeholder="持ち点"
+                       value="{{ fd["score" ~ i] if fd["score" ~ i] is defined and fd["score" ~ i] != 0 else '' }}" required>
             </div>
             {% endfor %}
 
@@ -95,6 +97,63 @@
               });
           });
         }
-    </script>      
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const totalTarget = 100000;
+            const inputs = [
+                document.getElementById("score1"),
+                document.getElementById("score2"),
+                document.getElementById("score3"),
+                document.getElementById("score4")
+            ];
+            const totalDisplay = document.getElementById("score-total");
+        
+            function updateScores() {
+                const values = inputs.map(i => {
+                    const val = i.value.trim();
+                    return val === "" ? null : parseInt(val, 10);
+                });
+        
+                const sum = values.reduce((acc, val) => acc + (val || 0), 0);
+                totalDisplay.textContent = `合計: ${sum.toLocaleString()} 点`;
+            }
+        
+            // blurイベントでのみ自動補完を実行
+            inputs.forEach((input, idx) => {
+                input.addEventListener("blur", () => {
+                    const values = inputs.map(i => {
+                        const val = i.value.trim();
+                        return val === "" ? null : parseInt(val, 10);
+                    });
+        
+                    const filledIndexes = values
+                        .map((v, i) => (v !== null && !isNaN(v) ? i : null))
+                        .filter(i => i !== null);
+                    const emptyIndexes = values
+                        .map((v, i) => (v === null || isNaN(v) ? i : null))
+                        .filter(i => i !== null);
+        
+                    const sum = values.reduce((acc, val) => acc + (val || 0), 0);
+        
+                    // 3人だけ入力済みなら、自動補完する
+                    if (filledIndexes.length === 3 && emptyIndexes.length === 1) {
+                        const targetIndex = emptyIndexes[0];
+                        const remaining = totalTarget - sum;
+                        inputs[targetIndex].value = remaining >= 0 ? remaining : 0;
+                    }
+        
+                    // 合計表示を更新
+                    updateScores();
+                });
+        
+                // 合計表示は input に合わせてリアルタイム更新
+                input.addEventListener("input", updateScores);
+            });
+        
+            // 初期表示
+            updateScores();
+        });
+        </script>                
 </body>
 </html>

@@ -45,9 +45,6 @@ class Game(db.Model):
     uma3 = db.Column(db.Integer, default=0)
     uma4 = db.Column(db.Integer, default=0)
 
-# ウマ・オカ設定
-UMAOKA = {'ok': 20000, 'uma': [10, 5, -5, -10]}
-
 def recalc_total_scores():
     players = Player.query.all()
     for player in players:
@@ -97,6 +94,17 @@ def index():
             # セッションに保存
             session["last_oka"] = form_data["oka"]
             session["last_uma"] = form_data["uma"]
+
+            # プレイヤーIDの重複チェック
+            player_ids = [
+                form_data["player1_id"],
+                form_data["player2_id"],
+                form_data["player3_id"],
+                form_data["player4_id"],
+            ]
+            if len(set(player_ids)) < 4:
+                error = "同じプレイヤーを複数選択しています。すべて異なるプレイヤーを選んでください。"
+                return render_template("index.html", players=players, error=error, form_data=form_data)
 
             # スコアの合計チェック
             total_score = form_data["score1"] + form_data["score2"] + form_data["score3"] + form_data["score4"]
