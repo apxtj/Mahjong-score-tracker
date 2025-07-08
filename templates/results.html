@@ -37,6 +37,7 @@
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <!-- スマホのアドレスバーなどのテーマカラー -->
     <meta name="theme-color" content="#007bff">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container-fluid">
@@ -66,6 +67,24 @@
         </nav>
 
         <h1 class="my-4">ゲーム結果</h1>
+        <div class="d-flex align-items-center mb-3 gap-3">
+            <label class="form-label mb-0"></label>
+            <div class="btn-group" role="group" aria-label="グラフタイプ選択">
+              <input type="radio" class="btn-check" name="graphType" id="totalScoreGraph" autocomplete="off" value="total" checked>
+              <label class="btn btn-outline-primary" for="totalScoreGraph">日ごとのトータルスコア</label>
+          
+              <input type="radio" class="btn-check" name="graphType" id="dailyScoreGraph" autocomplete="off" value="daily">
+              <label class="btn btn-outline-primary" for="dailyScoreGraph">一日内でのスコア</label>
+            </div>
+            
+            <button id="toggleChartBtn" class="btn btn-secondary">グラフを表示</button>
+        </div>
+          
+        <div class="mb-4" id="chartContainer" style="display: none;">
+            <canvas id="scoreTrendChart" height="120"></canvas>
+        </div>
+          
+
         <form method="get" class="row g-3 mb-4">
             <div class="col-md-3">
                 <label for="date" class="form-label">日付</label>
@@ -186,6 +205,117 @@
         <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const dateLabels = {{ date_labels | tojson }};  // 日付ラベル
+
+        // スコアデータ (undefinedをチェックして初期化)
+        const scoreTrends = {{ score_trends | tojson }};
+        for (const playerName in scoreTrends) {
+            scoreTrends[playerName] = scoreTrends[playerName] || [];  // undefined があれば空配列に置き換え
+        }
+
+        // 一日内でのスコア (undefinedをチェックして初期化)
+        const dailyScores = {{ daily_scores | tojson }};
+        const xLabels = {{ x_labels | tojson }}
+        
+        const ctx = document.getElementById('scoreTrendChart').getContext('2d');
+        
+        // グラフ設定
+        const colors = ['red', 'blue', 'green', 'orange', 'purple', 'black'];
+    
+        // グラフを作成する関数
+        const createGraph = (data, title, xLabel, labels) => {
+            const datasets = [];
+            let colorIndex = 0;  // 色インデックスリセット
+
+            for (const playerName in data) {
+                datasets.push({
+                    label: playerName,
+                    data: data[playerName],
+                    fill: false,
+                    borderColor: colors[colorIndex % colors.length],
+                    tension: 0.2,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                });
+                colorIndex++;
+            }
+
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: title
+                        },
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            mode: 'nearest',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'スコア (点)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: xLabel
+                            }
+                        }
+                    }
+                }
+            });
+        };
+
+        // 初期状態でトータルスコアグラフを表示
+        let currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
+
+        // グラフタイプ変更のイベントリスナー
+        document.querySelectorAll('input[name="graphType"]').forEach((radio) => {
+            radio.addEventListener('change', (event) => {
+                // 現在表示されているグラフを削除
+                currentChart.destroy(); 
+
+                // 選択されたグラフタイプに応じて新しいグラフを作成
+                if (event.target.value === 'total') {
+                    currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
+                } else {
+                    currentChart = createGraph(dailyScores, '一日内でのスコア推移', 'ゲーム単位', xLabels);
+                }
+            });
+        });
+
+        // グラフの表示・非表示を切り替えるボタン
+        const toggleBtn = document.getElementById('toggleChartBtn');
+        const chartContainer = document.getElementById('chartContainer');
+        
+        toggleBtn.addEventListener('click', () => {
+            if (chartContainer.style.display === 'none') {
+                chartContainer.style.display = 'block';
+                toggleBtn.textContent = 'グラフを非表示';
+                currentChart.resize();  // 表示時にサイズ調整
+            } else {
+                chartContainer.style.display = 'none';
+                toggleBtn.textContent = 'グラフを表示';
+            }
+        });
+
+    </script>
+       
     <script>
         if ('serviceWorker' in navigator) {
           window.addEventListener('load', () => {

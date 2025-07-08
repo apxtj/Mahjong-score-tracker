@@ -186,7 +186,7 @@ def index():
 @app.route("/results")
 def results():
     recalc_total_scores()
-    
+
     # フィルタ取得
     filter_date = request.args.get("date", "").strip()
     filter_player = request.args.get("player", "").strip()
@@ -195,14 +195,16 @@ def results():
     players = Player.query.order_by(Player.id).all()
     games = Game.query.order_by(Game.date, Game.id).all()
 
-    from collections import defaultdict
+    # 日付毎のゲームグループ化
     games_by_date = defaultdict(list)
     for game in games:
         games_by_date[game.date.strftime('%Y-%m-%d')].append(game)
 
     table_data = []
 
-    for date, games_on_date in games_by_date.items():
+    # --- ここまで元のまま ---
+
+    for date, games_on_date in sorted(games_by_date.items()):
         # 日付フィルタがある場合、対象日だけに絞る
         if filter_date and filter_date != date:
             continue
@@ -264,8 +266,71 @@ def results():
                 "totals": total_score_dict
             })
 
-    return render_template("results.html", players=players, table_data=table_data, 
-                           filter_date=filter_date, filter_player=filter_player, filter_rank=filter_rank)
+    # ----------- ここからグラフ用データ生成 ------------
+
+    # グラフ表示タイプ（累積スコア or ゲームスコア）をラジオボタンで切り替える
+    graph_type = request.args.get("graph_type", "cumulative")  # defaultは累積スコア
+
+    # プレイヤー名リスト
+    player_names = [p.name for p in players]
+
+    # 累積スコアと日ごとのスコアを準備
+    cumulative_scores = {name: 0 for name in player_names}  # 累積スコア
+    score_trends = {name: [] for name in player_names}  # グラフ用
+    daily_scores = {name: [] for name in player_names}  # 各ゲームのスコア
+    x_labels = []
+
+    filtered_dates = sorted(games_by_date.keys())
+    if filter_date:
+        filtered_dates = [filter_date] if filter_date in filtered_dates else []
+
+    game_counter = 1
+
+    for date in filtered_dates:
+        games_on_date = games_by_date[date]
+        
+        # 各プレイヤーの日付ごとのスコア
+        daily_total_score = {name: 0 for name in player_names}
+        for game in games_on_date:
+            scores = [
+                {"player": game.player1, "score": game.score1},
+                {"player": game.player2, "score": game.score2},
+                {"player": game.player3, "score": game.score3},
+                {"player": game.player4, "score": game.score4},
+            ]
+            
+            for s in scores:
+                player = s["player"]
+                score = s["score"]
+
+                if player and player.name:
+                    name = player.name
+                    daily_scores[name].append(score)  # ✅ ゲームごとのスコアを格納
+                    daily_total_score[name] += score  # ✅ 日合計の更新
+
+            x_labels.append(f"{date} G{game_counter}")
+            game_counter += 1
+            
+        # 累積スコアの更新
+        for name in player_names:
+            cumulative_scores[name] += daily_total_score[name]  # 累積スコア
+            score_trends[name].append(cumulative_scores[name])  # グラフ用
+
+    date_labels = filtered_dates
+
+    return render_template(
+        "results.html",
+        players=players,
+        table_data=table_data,
+        filter_date=filter_date,
+        filter_player=filter_player,
+        filter_rank=filter_rank,
+        date_labels=date_labels,
+        score_trends=score_trends,
+        daily_scores=daily_scores,
+        graph_type=graph_type,  # 選択されたグラフタイプを渡す
+        x_labels=x_labels,
+    )
 
 @app.route("/players")
 def players():
