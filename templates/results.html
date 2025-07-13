@@ -1,72 +1,8 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>麻雀戦績結果</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <style>
-        .top-player {
-            background-color: gold !important;
-            font-weight: bold !important;
-            color: black !important;
-        }
-    
-        .last-player {
-            background-color: #ffcccc !important;
-            font-weight: bold !important;
-            color: black !important;
-        }
+{% extends "base.html" %}
 
-        .score-toggle {
-            color: inherit !important;
-            text-decoration: none !important;
-        }
-    
-        .score-toggle:hover {
-            color: inherit !important;
-            text-decoration: underline dotted !important;
-        }
-    
-        .toggle-icon {
-            font-size: 0.8em;
-            color: #888;  /* 薄いグレー */
-        }
-    </style>
-    <!-- PWA用のマニフェストファイルへのリンク -->
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <!-- スマホのアドレスバーなどのテーマカラー -->
-    <meta name="theme-color" content="#007bff">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <div class="container-fluid">
-        <!-- ナビゲーションバー -->
-        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4 px-2">
-            <a class="navbar-brand fw-bold fs-5" href="#">麻雀戦績管理</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse mt-2 mt-lg-0" id="navbarNav">
-                <ul class="navbar-nav small">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">麻雀戦績入力</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="{{ url_for('results') }}">戦績一覧</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('add_player') }}">プレイヤー情報追加</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('players') }}">プレイヤー情報一覧</a>
-                    </li>
-                </ul>
-            </div>
-        </nav>
-        
+{% block title %}麻雀戦績結果{% endblock %}
 
+{% block content %}
         <h1 class="my-4">ゲーム結果</h1>
         <div class="d-flex align-items-center mb-3 gap-3">
             <label class="form-label mb-0"></label>
@@ -81,8 +17,8 @@
             <button id="toggleChartBtn" class="btn btn-secondary">グラフを表示</button>
         </div>
           
-        <div class="mb-4" id="chartContainer" style="display: none;">
-            <canvas id="scoreTrendChart" height="120"></canvas>
+        <div class="mb-4" id="chartContainer" style="display: none; position: relative; width: 100%; max-width: 100%; height: auto;">
+            <canvas id="scoreTrendChart"></canvas>
         </div>
           
 
@@ -205,7 +141,6 @@
         </table>
         <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const dateLabels = {{ date_labels | tojson }};  // 日付ラベル
 
@@ -250,6 +185,7 @@
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         title: {
                             display: true,
@@ -314,9 +250,7 @@
                 toggleBtn.textContent = 'グラフを表示';
             }
         });
-
-    </script>
-       
+    </script>     
     <script>
         if ('serviceWorker' in navigator) {
           window.addEventListener('load', () => {
@@ -329,6 +263,5 @@
               });
           });
         }
-      </script>      
-</body>
-</html>
+      </script>
+{% endblock %}
