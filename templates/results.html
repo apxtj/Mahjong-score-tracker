@@ -221,18 +221,28 @@
         // 初期状態でトータルスコアグラフを表示
         let currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
 
+        let chartVisible = false;
+
         // グラフタイプ変更のイベントリスナー
         document.querySelectorAll('input[name="graphType"]').forEach((radio) => {
             radio.addEventListener('change', (event) => {
+
+                chartContainer.style.display = 'none';
+
                 // 現在表示されているグラフを削除
                 currentChart.destroy(); 
 
                 // 選択されたグラフタイプに応じて新しいグラフを作成
-                if (event.target.value === 'total') {
-                    currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
-                } else {
-                    currentChart = createGraph(dailyScores, '一日内でのスコア推移', 'ゲーム単位', xLabels);
-                }
+                setTimeout(() => {
+                    if (event.target.value === 'total') {
+                        currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
+                    } else {
+                        currentChart = createGraph(dailyScores, '一日内でのスコア推移', 'ゲーム単位', xLabels);
+                    }
+
+                    if(chartVisible) chartContainer.style.display = 'block';
+                    currentChart.resize();
+                }, 10);
             });
         });
 
@@ -244,9 +254,11 @@
             if (chartContainer.style.display === 'none') {
                 chartContainer.style.display = 'block';
                 toggleBtn.textContent = 'グラフを非表示';
+                chartVisible = true;
                 currentChart.resize();  // 表示時にサイズ調整
             } else {
                 chartContainer.style.display = 'none';
+                chartVisible = false;
                 toggleBtn.textContent = 'グラフを表示';
             }
         });
