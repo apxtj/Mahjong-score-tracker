@@ -98,7 +98,7 @@
                                    role="button"
                                    aria-expanded="false"
                                    aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
-                                    <span>{{ info.score }} 点</span>
+                                   <span class="score-value" data-raw="{{ info.score }}">{{ info.score }} 点</span>
                                     <span class="ms-1 toggle-icon">▶</span>
                                 </a><br>{{ info.rank }}位
                     
@@ -127,7 +127,7 @@
                             {% set info = row.totals.get(player.name) %}
                             <td>
                                 {% if info %}
-                                    {{ info.total }} 点<br>{{ info.rank }}位
+                                    <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
                                 {% else %}
                                     -
                                 {% endif %}
@@ -140,6 +140,7 @@
             </tbody>            
         </table>
         <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
+        <button id="toggleScoreFormatBtn" class="btn btn-outline-secondary">千点単位表示に切替</button>
     </div>
     <script>
         const dateLabels = {{ date_labels | tojson }};  // 日付ラベル
@@ -237,7 +238,7 @@
                     if (event.target.value === 'total') {
                         currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
                     } else {
-                        currentChart = createGraph(dailyScores, '一日内でのスコア推移', 'ゲーム単位', xLabels);
+                        currentChart = createGraph(dailyScores, 'ゲーム単位のスコア推移', 'ゲーム単位', xLabels);
                     }
 
                     if(chartVisible) chartContainer.style.display = 'block';
@@ -275,5 +276,28 @@
               });
           });
         }
-      </script>
+    </script>
+    <script>
+        const toggleScoreBtn = document.getElementById('toggleScoreFormatBtn');
+        let isThousandUnit = false;
+    
+        toggleScoreBtn.addEventListener('click', () => {
+            isThousandUnit = !isThousandUnit;
+    
+            // 表示切替
+            document.querySelectorAll('.score-value').forEach(el => {
+                const raw = parseInt(el.dataset.raw, 10);
+                if (!isNaN(raw)) {
+                    if (isThousandUnit) {
+                        el.textContent = (raw / 1000).toFixed(1) + ' 点';
+                    } else {
+                        el.textContent = raw + ' 点';
+                    }
+                }
+            });
+    
+            toggleScoreBtn.textContent = isThousandUnit ? '通常表示に切替' : '千点単位表示に切替';
+        });
+    </script>
+    
 {% endblock %}
