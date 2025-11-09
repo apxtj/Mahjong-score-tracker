@@ -206,7 +206,7 @@ def results():
     filter_rank = request.args.get("rank", "").strip()
 
     players = Player.query.order_by(Player.id).all()
-    games = Game.query.order_by(Game.date, Game.id).all()
+    games = Game.query.order_by(Game.date, Game.id.desc()).all()
 
     # 日付毎のゲームグループ化
     games_by_date = defaultdict(list)

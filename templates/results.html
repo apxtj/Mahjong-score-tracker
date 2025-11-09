@@ -51,109 +51,110 @@
                 <a href="{{ url_for('results') }}" class="btn btn-secondary">リセット</a>
             </div>
         </form>        
-          
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                    <th>ゲーム日</th>
-                    <th>ゲーム数</th>
-                    {% for player in players %}
-                        <th>{{ player.name }}</th>
-                    {% endfor %}
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <script>
-                // Bootstrap Collapse イベントでアイコンを切り替え
-                document.addEventListener("DOMContentLoaded", function () {
-                    const toggles = document.querySelectorAll('.score-toggle');
-            
-                    toggles.forEach(toggle => {
-                        const icon = toggle.querySelector('.toggle-icon');
-                        const collapseId = toggle.getAttribute('href');
-                        const collapseEl = document.querySelector(collapseId);
-            
-                        collapseEl.addEventListener('show.bs.collapse', () => {
-                            icon.textContent = "▼";
-                        });
-                        collapseEl.addEventListener('hide.bs.collapse', () => {
-                            icon.textContent = "▶";
+        <div class="table-responsive table-scroll-y">
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+                        <th>ゲーム日</th>
+                        <th>ゲーム数</th>
+                        {% for player in players %}
+                            <th>{{ player.name }}</th>
+                        {% endfor %}
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <script>
+                    // Bootstrap Collapse イベントでアイコンを切り替え
+                    document.addEventListener("DOMContentLoaded", function () {
+                        const toggles = document.querySelectorAll('.score-toggle');
+                
+                        toggles.forEach(toggle => {
+                            const icon = toggle.querySelector('.toggle-icon');
+                            const collapseId = toggle.getAttribute('href');
+                            const collapseEl = document.querySelector(collapseId);
+                
+                            collapseEl.addEventListener('show.bs.collapse', () => {
+                                icon.textContent = "▼";
+                            });
+                            collapseEl.addEventListener('hide.bs.collapse', () => {
+                                icon.textContent = "▶";
+                            });
                         });
                     });
-                });
-            </script>
-            
-            <tbody>
-                {% for row in table_data %}
-                    {% if row.type == "game" %}
-                    <tr>
-                        <td>{{ row.date }}</td>
-                        <td>{{ row.game_num }}</td>
-                        {% for player in players %}
-                        {% set info = row.scores.get(player.name) %}
-                        <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
-                            {% if info %}
-                                <a class="d-inline-flex align-items-center score-toggle text-decoration-none"
-                                   data-bs-toggle="collapse"
-                                   href="#detail-{{ row.game_id }}-{{ loop.index0 }}"
-                                   role="button"
-                                   aria-expanded="false"
-                                   aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
-                                   <span class="score-value" data-raw="{{ info.score }}">{{ info.score }} 点</span>
-                                    <span class="ms-1 toggle-icon">▶</span>
-                                </a><br>{{ info.rank }}位
-                    
-                                <div class="collapse mt-1" id="detail-{{ row.game_id }}-{{ loop.index0 }}">
-                                    <small>
-                                        原点: {{ info.raw }}<br>
-                                        ウマ: {% if info.uma >= 0 %}+{% endif %}{{ info.uma }}<br>
-                                        オカ: {% if info.oka >= 0 %}+{% endif %}{{ info.oka }}
-                                    </small>
-                                </div>
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                    {% endfor %}                    
-                        <td>
-                            <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
-                                <button type="submit" class="btn btn-danger btn-sm">削除</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% elif row.type == "summary" %}
-                    <tr class="table-info">
-                        <td colspan="2"><strong>{{ row.date }} 合計</strong></td>
-                        {% for player in players %}
-                            {% set info = row.totals.get(player.name) %}
-                            <td>
+                </script>
+                
+                <tbody>
+                    {% for row in table_data %}
+                        {% if row.type == "game" %}
+                        <tr>
+                            <td>{{ row.date }}</td>
+                            <td>{{ row.game_num }}</td>
+                            {% for player in players %}
+                            {% set info = row.scores.get(player.name) %}
+                            <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
                                 {% if info %}
-                                    <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
+                                    <a class="d-inline-flex align-items-center score-toggle text-decoration-none"
+                                    data-bs-toggle="collapse"
+                                    href="#detail-{{ row.game_id }}-{{ loop.index0 }}"
+                                    role="button"
+                                    aria-expanded="false"
+                                    aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                                    <span class="score-value" data-raw="{{ info.score }}">{{ info.score }} 点</span>
+                                        <span class="ms-1 toggle-icon">▶</span>
+                                    </a><br>{{ info.rank }}位
+                        
+                                    <div class="collapse mt-1" id="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                                        <small>
+                                            原点: {{ info.raw }}<br>
+                                            ウマ: {% if info.uma >= 0 %}+{% endif %}{{ info.uma }}<br>
+                                            オカ: {% if info.oka >= 0 %}+{% endif %}{{ info.oka }}
+                                        </small>
+                                    </div>
                                 {% else %}
                                     -
                                 {% endif %}
                             </td>
+                        {% endfor %}                    
+                            <td>
+                                <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
+                                    <button type="submit" class="btn btn-danger btn-sm">削除</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% elif row.type == "summary" %}
+                        <tr class="table-info">
+                            <td colspan="2"><strong>{{ row.date }} 合計</strong></td>
+                            {% for player in players %}
+                                {% set info = row.totals.get(player.name) %}
+                                <td>
+                                    {% if info %}
+                                        <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                            <td>—</td>
+                        </tr>
+                        {% endif %}
+                    {% endfor %}
+                    <tr class="table-warning">
+                        <td colspan="2"><strong>全対象期間 合計</strong></td>
+                        {% for player in players %}
+                        {% set ginfo = grand_totals.get(player.name) %}
+                        <td>
+                            {% if ginfo %}
+                            <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
                         {% endfor %}
                         <td>—</td>
                     </tr>
-                    {% endif %}
-                {% endfor %}
-                <tr class="table-warning">
-                    <td colspan="2"><strong>全対象期間 合計</strong></td>
-                    {% for player in players %}
-                      {% set ginfo = grand_totals.get(player.name) %}
-                      <td>
-                        {% if ginfo %}
-                          <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
-                        {% else %}
-                          -
-                        {% endif %}
-                      </td>
-                    {% endfor %}
-                    <td>—</td>
-                </tr>
-            </tbody>            
-        </table>
+                </tbody>            
+            </table>
+        </div>
         <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
         <button id="toggleScoreFormatBtn" class="btn btn-outline-secondary">千点単位表示に切替</button>
     </div>
