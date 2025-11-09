@@ -25,7 +25,8 @@
         <form method="get" class="row g-3 mb-4">
             <div class="col-md-3">
                 <label for="date" class="form-label">日付</label>
-                <input type="date" name="date" class="form-control" value="{{ filter_date }}">
+                <!-- type="text" に変更 -->
+                <input type="text" id="datePicker" name="date" class="form-control" placeholder="日付を選択（複数可）" value="{{ filter_dates|join(',') }}">
             </div>
             <div class="col-md-3">
                 <label for="player" class="form-label">プレイヤー</label>
@@ -137,6 +138,20 @@
                     </tr>
                     {% endif %}
                 {% endfor %}
+                <tr class="table-warning">
+                    <td colspan="2"><strong>全対象期間 合計</strong></td>
+                    {% for player in players %}
+                      {% set ginfo = grand_totals.get(player.name) %}
+                      <td>
+                        {% if ginfo %}
+                          <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
+                        {% else %}
+                          -
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                    <td>—</td>
+                </tr>
             </tbody>            
         </table>
         <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
@@ -299,5 +314,15 @@
             toggleScoreBtn.textContent = isThousandUnit ? '通常表示に切替' : '千点単位表示に切替';
         });
     </script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            flatpickr("#datePicker", {
+                mode: "multiple",       // 複数選択
+                dateFormat: "Y-m-d",    // YYYY-MM-DD 形式
+                locale: "ja",            // 日本語表示
+                defaultDate: "{{ filter_dates|tojson }}"  // 選択済み日付を配列で渡す
+            });
+        });
+    </script>
 {% endblock %}

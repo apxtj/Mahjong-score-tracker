@@ -88,7 +88,7 @@ def index():
                 "player4_id": request.form.get("player4_id", ""),
                 "score4": int(request.form.get("score4", 0)),
                 "oka": int(request.form.get("oka", 0)),
-                "uma": request.form.get("uma", "30000,10000,-10000,-30000"),
+                "uma": request.form.get("uma", "20000,-20000,-40000,-60000"),
             }
             
             # セッションに保存
@@ -187,8 +187,21 @@ def index():
 def results():
     recalc_total_scores()
 
-    # フィルタ取得
-    filter_date = request.args.get("date", "").strip()
+    # 複数日付取得
+    raw_dates = request.args.getlist("date")  # 例 ["2025‑07‑09,2025‑11‑09"] または ["2025‑07‑09","2025‑11‑09"]
+    # カンマ区切り１要素の場合も分割
+    filter_dates = []
+    for rd in raw_dates:
+        # 空文字回避
+        if not rd:
+            continue
+        # カンマで分割してリスト化
+        for d in rd.split(','):
+            d2 = d.strip()
+            if d2:
+                filter_dates.append(d2)
+    # 重複を排除（任意）
+    filter_dates = list(dict.fromkeys(filter_dates))
     filter_player = request.args.get("player", "").strip()
     filter_rank = request.args.get("rank", "").strip()
 
@@ -206,7 +219,7 @@ def results():
 
     for date, games_on_date in sorted(games_by_date.items()):
         # 日付フィルタがある場合、対象日だけに絞る
-        if filter_date and filter_date != date:
+        if filter_dates and date not in filter_dates:
             continue
 
         player_daily_totals = {p.name: 0 for p in players}
@@ -281,8 +294,17 @@ def results():
     x_labels = []
 
     filtered_dates = sorted(games_by_date.keys())
-    if filter_date:
-        filtered_dates = [filter_date] if filter_date in filtered_dates else []
+    if filter_dates:
+        filtered_dates = [d for d in sorted(games_by_date.keys()) if d in filter_dates]
+
+    grand_total_by_player = {name: 0 for name in player_names}
+    for row in table_data:
+        if row["type"] == "game":
+            for name, info in row["scores"].items():
+                grand_total_by_player[name] += info["score"]
+    grand_ranked = sorted(grand_total_by_player.items(), key=lambda x: x[1], reverse=True)
+    grand_rank_dict = {name: {"total": total, "rank": idx+1}
+                       for idx, (name, total) in enumerate(grand_ranked)}
 
     game_counter = 1
 
@@ -322,7 +344,7 @@ def results():
         "results.html",
         players=players,
         table_data=table_data,
-        filter_date=filter_date,
+        filter_dates=filter_dates,
         filter_player=filter_player,
         filter_rank=filter_rank,
         date_labels=date_labels,
@@ -330,6 +352,7 @@ def results():
         daily_scores=daily_scores,
         graph_type=graph_type,  # 選択されたグラフタイプを渡す
         x_labels=x_labels,
+        grand_totals=grand_rank_dict
     )
 
 @app.route("/players")
@@ -390,6 +413,7 @@ def delete_game(game_id):
     game = Game.query.get_or_404(game_id)
     db.session.delete(game)
     db.session.commit()
+    recalc_total_scores()
     return redirect(url_for('results'))
 
 
