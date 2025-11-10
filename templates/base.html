@@ -19,105 +19,113 @@
     window.addEventListener('load', setRealVH);
   </script>
   <style>
+    /* 共通 */
     .top-player {
-        background-color: gold !important;
-        font-weight: bold !important;
-        color: black !important;
+      background-color: gold !important;
+      font-weight: bold !important;
+      color: black !important;
     }
 
     .last-player {
-        background-color: #ffcccc !important;
-        font-weight: bold !important;
-        color: black !important;
+      background-color: #ffcccc !important;
+      font-weight: bold !important;
+      color: black !important;
     }
 
     .score-toggle {
-        color: inherit !important;
-        text-decoration: none !important;
+      color: inherit !important;
+      text-decoration: none !important;
     }
 
     .score-toggle:hover {
-        color: inherit !important;
-        text-decoration: underline dotted !important;
+      color: inherit !important;
+      text-decoration: underline dotted !important;
     }
 
     .toggle-icon {
-        font-size: 0.8em;
-        color: #888;  /* 薄いグレー */
+      font-size: 0.8em;
+      color: #888;
     }
 
     #chartContainer {
-        position: relative;
-        width: 100%;
-        height: calc(var(--vh, 1vh) * 40); /* ← 正確な40vh */
-        max-height: 500px;  /* （任意）大きくなりすぎないように */
-        min-height: 250px;  /* （任意）潰れすぎないように */
+      position: relative;
+      width: 100%;
+      height: calc(var(--vh, 1vh) * 40);
+      max-height: 500px;
+      min-height: 250px;
     }
-    
-    #scoreTrendChart {
-        width: 100% !important;
-        height: 100% !important;
-    }    
 
-    /* 横スクロールのラッパーを確保（Bootstrap .table-responsive でも大丈夫ですが補強） */
+    #scoreTrendChart {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* テーブル横スクロール用 */
     .table-responsive {
       width: 100%;
       overflow-x: auto;
     }
 
-    /* テーブルが狭い画面で見やすくするための補正 */
-    @media (max-width: 600px) {
-      .table.table-bordered th,
-      .table.table-bordered td {
-        font-size: 13px;     /* フォントを小さめに */
-        padding: 4px 6px;    /* セルの余白を小さめに */
-        min-width: 60px;     /* セルが縮みすぎないように最小幅 */
-      }
-      .table.table-bordered thead th {
-        font-weight: bold;
-        font-size: 14px;
-      }
-      .table-responsive {
-        /* オプション：テーブル全体を少し縮小表示して見やすくする */
-        transform-origin: top left;
-        transform: scale(0.95);   /* 95% に縮小 */
-      }
+    /* 縦スクロール用ラッパー */
+    .table-scroll-y {
+      max-height: 60vh;
+      overflow-y: auto;
     }
-    @media (max-width: 600px) {
-      .table.table-bordered th:nth-child(2),
-      .table.table-bordered td:nth-child(2) {
-        width: 40px;
-        min-width: 30px;
-        font-size: 12px;
-        padding: 2px 4px;
-      }
+
+    /* テーブル全体 */
+    .table {
+      border-collapse: separate; /* sticky を使う場合はこちらが安定 */
+      width: 100%;
     }
-    /* テーブルヘッダーをスクロール時固定 */
+
+    /* ヘッダー固定 */
     .table thead th {
       position: sticky;
       top: 0;
-      background-color: #fff;   /* ヘッダー背景を白などにして下の行が透けないように */
-      z-index: 10;              /* 他の要素より上に出るように */
+      background-color: #fff;
+      z-index: 10;
     }
 
-    /* ボーダー等が崩れる場合の補正 */
-    .table {
-      border-collapse: separate; /* sticky を使うときは collapse より separate が推奨される場合あり） :contentReference[oaicite:0]{index=0} */
-    }
-    /* 縦スクロール対応ラッパー */
-    .table-scroll-y {
-      /* 高さを適度に指定。例として画面高さの 50vh または px 指定 */
-      max-height: 60vh;  /* スマホ時などに 画面の6割程度をテーブルに使う例 */
-      overflow-y: auto;
-    }
-    /* ヘッダー固定（スクロールしても見える状態） */
-    .table-scroll-y thead th {
-      position: sticky;
-      top: 0;
-      background-color: #fff; /* 背景色は必ず指定して下の行が透けないように */
-      z-index: 5;             /* 他のセルより上に表示されるように */
-    }
+    /* スマホ／小画面用調整 */
+    @media (max-width: 600px) {
+      .table.table-bordered th,
+      .table.table-bordered td {
+        font-size: 13px;
+        padding: 4px 6px;
+        min-width: 60px;
+      }
 
+      .table.table-bordered thead th {
+        font-size: 14px;
+        font-weight: bold;
+      }
+
+      .table-responsive {
+        /* 少し縮小して見やすく */
+        transform-origin: top left;
+        transform: scale(0.95);
+      }
+
+      /* ゲーム数列 (例：2番目) をさらに狭く */
+      .table.table-bordered th:nth-child(2),
+      .table.table-bordered td:nth-child(2) {
+        width: 30px;
+        min-width: 20px;
+        font-size: 12px;
+        padding: 2px 4px;
+        text-align: center;
+      }
+
+      /* ゲーム日列 (例：1番目) を狭く */
+      .table.table-bordered th:nth-child(1),
+      .table.table-bordered td:nth-child(1) {
+        width: 60px;
+        min-width: 35px;
+        font-size: 11px;
+        padding: 2px 4px;
+        text-align: center;
+      }
+    }
   </style>
     <!-- PWA用のマニフェストファイルへのリンク -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
