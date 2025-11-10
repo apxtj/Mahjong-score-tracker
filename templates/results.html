@@ -24,11 +24,6 @@
 
         <form method="get" class="row g-3 mb-4">
             <div class="col-md-3">
-                <label for="date" class="form-label">日付</label>
-                <!-- type="text" に変更 -->
-                <input type="text" id="datePicker" name="date" class="form-control" placeholder="日付を選択（複数可）" value="{{ filter_dates|join(',') }}">
-            </div>
-            <div class="col-md-3">
                 <label for="player" class="form-label">プレイヤー</label>
                 <select name="player" class="form-select">
                     <option value="">-- 選択 --</option>
@@ -45,6 +40,11 @@
                         <option value="{{ i }}" {% if filter_rank == i|string %}selected{% endif %}>{{ i }}位</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="col-md-3">
+                <label for="date" class="form-label">日付</label>
+                <!-- type="text" に変更 -->
+                <input type="text" id="datePicker" name="date" class="form-control" placeholder="日付を選択（複数可）" value="{{ filter_dates|join(',') }}">
             </div>
             <div class="col-md-3 align-self-end">
                 <button type="submit" class="btn btn-primary">検索</button>
