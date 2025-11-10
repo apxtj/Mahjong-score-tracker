@@ -326,4 +326,18 @@
             });
         });
     </script>
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // table をラッパーしているスクロール可能な要素を取得
+        var wrapper = document.querySelector(".table-responsive.table-scroll-y");
+        if (wrapper) {
+        // 縦スクロールのラッパーがある場合
+        wrapper.scrollTop = wrapper.scrollHeight;
+        } else {
+        // なければページ全体をスクロール
+        window.scrollTo(0, document.body.scrollHeight);
+        }
+    });
+    </script>
+
 {% endblock %}
