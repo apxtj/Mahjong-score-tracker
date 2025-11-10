@@ -69,16 +69,18 @@
     @media (max-width: 600px) {
       .table.table-bordered th,
       .table.table-bordered td {
-        padding: 6px 8px;
+        font-size: 13px;     /* フォントを小さめに */
+        padding: 4px 6px;    /* セルの余白を小さめに */
+        min-width: 60px;     /* セルが縮みすぎないように最小幅 */
+      }
+      .table.table-bordered thead th {
+        font-weight: bold;
         font-size: 14px;
       }
-      .table.table-bordered th {
-        font-size: 15px;
-      }
-      /* 最小幅を確保して縮みすぎないように */
-      .table.table-bordered td,
-      .table.table-bordered th {
-        min-width: 75px;
+      .table-responsive {
+        /* オプション：テーブル全体を少し縮小表示して見やすくする */
+        transform-origin: top left;
+        transform: scale(0.95);   /* 95% に縮小 */
       }
     }
     /* テーブルヘッダーをスクロール時固定 */
