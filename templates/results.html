@@ -3,341 +3,300 @@
 {% block title %}麻雀戦績結果{% endblock %}
 
 {% block content %}
-        <h1 class="my-4">ゲーム結果</h1>
-        <div class="d-flex align-items-center mb-3 gap-3">
-            <label class="form-label mb-0"></label>
-            <div class="btn-group" role="group" aria-label="グラフタイプ選択">
-              <input type="radio" class="btn-check" name="graphType" id="totalScoreGraph" autocomplete="off" value="total" checked>
-              <label class="btn btn-outline-primary" for="totalScoreGraph">日ごとのトータルスコア</label>
-          
-              <input type="radio" class="btn-check" name="graphType" id="dailyScoreGraph" autocomplete="off" value="daily">
-              <label class="btn btn-outline-primary" for="dailyScoreGraph">一日内でのスコア</label>
-            </div>
-            
-            <button id="toggleChartBtn" class="btn btn-secondary">グラフを表示</button>
-        </div>
-          
-        <div class="mb-4" id="chartContainer" style="display: none; position: relative; width: 100%; max-width: 100%; height: auto;">
-            <canvas id="scoreTrendChart"></canvas>
-        </div>
-          
+<h1 class="my-4">ゲーム結果</h1>
+<div class="d-flex align-items-center mb-3 gap-3">
+  <label class="form-label mb-0"></label>
+  <div class="btn-group" role="group" aria-label="グラフタイプ選択">
+    <input type="radio" class="btn-check" name="graphType" id="totalScoreGraph" autocomplete="off" value="total" checked>
+    <label class="btn btn-outline-primary" for="totalScoreGraph">日ごとのトータルスコア</label>
 
-        <form method="get" class="row g-3 mb-4">
-            <div class="col-md-3">
-                <label for="player" class="form-label">プレイヤー</label>
-                <select name="player" class="form-select">
-                    <option value="">-- 選択 --</option>
-                    {% for p in players %}
-                        <option value="{{ p.name }}" {% if p.name == filter_player %}selected{% endif %}>{{ p.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="rank" class="form-label">順位</label>
-                <select name="rank" class="form-select">
-                    <option value="">-- 選択 --</option>
-                    {% for i in range(1, 5) %}
-                        <option value="{{ i }}" {% if filter_rank == i|string %}selected{% endif %}>{{ i }}位</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="date" class="form-label">日付</label>
-                <!-- type="text" に変更 -->
-                <input type="text" id="datePicker" name="date" class="form-control" placeholder="日付を選択（複数可）" value="{{ filter_dates|join(',') }}">
-            </div>
-            <div class="col-md-3 align-self-end">
-                <button type="submit" class="btn btn-primary">検索</button>
-                <a href="{{ url_for('results') }}" class="btn btn-secondary">リセット</a>
-            </div>
-        </form>        
-        <div class="table-responsive table-scroll-y">
-            <table class="table table-bordered table-striped">
-                <thead>
-                    <tr>
-                        <th>ゲーム日</th>
-                        <th>ゲーム数</th>
-                        {% for player in players %}
-                            <th>{{ player.name }}</th>
-                        {% endfor %}
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <script>
-                    // Bootstrap Collapse イベントでアイコンを切り替え
-                    document.addEventListener("DOMContentLoaded", function () {
-                        const toggles = document.querySelectorAll('.score-toggle');
-                
-                        toggles.forEach(toggle => {
-                            const icon = toggle.querySelector('.toggle-icon');
-                            const collapseId = toggle.getAttribute('href');
-                            const collapseEl = document.querySelector(collapseId);
-                
-                            collapseEl.addEventListener('show.bs.collapse', () => {
-                                icon.textContent = "▼";
-                            });
-                            collapseEl.addEventListener('hide.bs.collapse', () => {
-                                icon.textContent = "▶";
-                            });
-                        });
-                    });
-                </script>
-                
-                <tbody>
-                    {% for row in table_data %}
-                        {% if row.type == "game" %}
-                        <tr>
-                            <td>{{ row.date }}</td>
-                            <td>{{ row.game_num }}</td>
-                            {% for player in players %}
-                            {% set info = row.scores.get(player.name) %}
-                            <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
-                                {% if info %}
-                                    <a class="d-inline-flex align-items-center score-toggle text-decoration-none"
-                                    data-bs-toggle="collapse"
-                                    href="#detail-{{ row.game_id }}-{{ loop.index0 }}"
-                                    role="button"
-                                    aria-expanded="false"
-                                    aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
-                                    <span class="score-value" data-raw="{{ info.score }}">{{ info.score }} 点</span>
-                                        <span class="ms-1 toggle-icon">▶</span>
-                                    </a><br>{{ info.rank }}位
-                        
-                                    <div class="collapse mt-1" id="detail-{{ row.game_id }}-{{ loop.index0 }}">
-                                        <small>
-                                            原点: {{ info.raw }}<br>
-                                            ウマ: {% if info.uma >= 0 %}+{% endif %}{{ info.uma }}<br>
-                                            オカ: {% if info.oka >= 0 %}+{% endif %}{{ info.oka }}
-                                        </small>
-                                    </div>
-                                {% else %}
-                                    -
-                                {% endif %}
-                            </td>
-                        {% endfor %}                    
-                            <td>
-                                <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
-                                    <button type="submit" class="btn btn-danger btn-sm">削除</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% elif row.type == "summary" %}
-                        <tr class="table-info">
-                            <td colspan="2"><strong>{{ row.date }} 合計</strong></td>
-                            {% for player in players %}
-                                {% set info = row.totals.get(player.name) %}
-                                <td>
-                                    {% if info %}
-                                        <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
-                                    {% else %}
-                                        -
-                                    {% endif %}
-                                </td>
-                            {% endfor %}
-                            <td>—</td>
-                        </tr>
-                        {% endif %}
-                    {% endfor %}
-                    <tr class="table-warning">
-                        <td colspan="2"><strong>全対象期間 合計</strong></td>
-                        {% for player in players %}
-                        {% set ginfo = grand_totals.get(player.name) %}
-                        <td>
-                            {% if ginfo %}
-                            <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
-                            {% else %}
-                            -
-                            {% endif %}
-                        </td>
-                        {% endfor %}
-                        <td>—</td>
-                    </tr>
-                </tbody>            
-            </table>
-        </div>
-        <a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
-        <button id="toggleScoreFormatBtn" class="btn btn-outline-secondary">千点単位表示に切替</button>
-    </div>
-    <script>
-        const dateLabels = {{ date_labels | tojson }};  // 日付ラベル
+    <input type="radio" class="btn-check" name="graphType" id="dailyScoreGraph" autocomplete="off" value="daily">
+    <label class="btn btn-outline-primary" for="dailyScoreGraph">一日内でのスコア</label>
+  </div>
 
-        // スコアデータ (undefinedをチェックして初期化)
-        const scoreTrends = {{ score_trends | tojson }};
-        for (const playerName in scoreTrends) {
-            scoreTrends[playerName] = scoreTrends[playerName] || [];  // undefined があれば空配列に置き換え
-        }
+  <button id="toggleChartBtn" class="btn btn-secondary">グラフを表示</button>
+</div>
 
-        // 一日内でのスコア (undefinedをチェックして初期化)
-        const dailyScores = {{ daily_scores | tojson }};
-        const xLabels = {{ x_labels | tojson }}
-        
-        const ctx = document.getElementById('scoreTrendChart').getContext('2d');
-        
-        // グラフ設定
-        const colors = ['red', 'blue', 'green', 'orange', 'purple', 'black'];
-    
-        // グラフを作成する関数
-        const createGraph = (data, title, xLabel, labels) => {
-            const datasets = [];
-            let colorIndex = 0;  // 色インデックスリセット
+<div class="mb-4" id="chartContainer" style="display: none; position: relative; width: 100%; max-width: 100%; height: auto;">
+  <canvas id="scoreTrendChart"></canvas>
+</div>
 
-            for (const playerName in data) {
-                datasets.push({
-                    label: playerName,
-                    data: data[playerName],
-                    fill: false,
-                    borderColor: colors[colorIndex % colors.length],
-                    tension: 0.2,
-                    pointRadius: 3,
-                    pointHoverRadius: 6,
-                });
-                colorIndex++;
+<form method="get" class="row g-3 mb-4">
+  <div class="col-md-3">
+    <label for="player" class="form-label">プレイヤー</label>
+    <select name="player" class="form-select">
+      <option value="">-- 選択 --</option>
+      {% for p in players %}
+        <option value="{{ p.name }}" {% if p.name == filter_player %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label for="rank" class="form-label">順位</label>
+    <select name="rank" class="form-select">
+      <option value="">-- 選択 --</option>
+      {% for i in range(1, 5) %}
+        <option value="{{ i }}" {% if filter_rank == i|string %}selected{% endif %}>{{ i }}位</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label for="date" class="form-label">日付</label>
+    <input type="text" id="datePicker" name="date" class="form-control" placeholder="日付を選択（複数可）" value="{{ filter_dates|join(',') }}">
+  </div>
+  <div class="col-md-3 align-self-end">
+    <button type="submit" class="btn btn-primary">検索</button>
+    <a href="{{ url_for('results') }}" class="btn btn-secondary">リセット</a>
+  </div>
+</form>
+
+<div class="table-responsive table-scroll-y">
+  <table class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>ゲーム日</th>
+        <th>ゲーム数</th>
+        {% for player in players %}
+          <th>{{ player.name }}</th>
+        {% endfor %}
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table_data %}
+        {% if row.type == "game" %}
+          <tr>
+            <td>{{ row.date }}</td>
+            <td>{{ row.game_num }}</td>
+            {% for player in players %}
+              {% set info = row.scores.get(player.name) %}
+              <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
+                {% if info %}
+                  <a class="d-inline-flex align-items-center score-toggle text-decoration-none"
+                     data-bs-toggle="collapse"
+                     href="#detail-{{ row.game_id }}-{{ loop.index0 }}"
+                     role="button"
+                     aria-expanded="false"
+                     aria-controls="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                    <span class="score-value" data-raw="{{ info.score }}">{{ info.score }} 点</span>
+                    <span class="ms-1 toggle-icon">▶</span>
+                  </a><br>{{ info.rank }}位
+
+                  <div class="collapse mt-1" id="detail-{{ row.game_id }}-{{ loop.index0 }}">
+                    <small>
+                      原点: {{ info.raw }}<br>
+                      ウマ: {% if info.uma >= 0 %}+{% endif %}{{ info.uma }}<br>
+                      オカ: {% if info.oka >= 0 %}+{% endif %}{{ info.oka }}
+                    </small>
+                  </div>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            {% endfor %}
+            <td>
+              <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
+                <button type="submit" class="btn btn-danger btn-sm">削除</button>
+              </form>
+            </td>
+          </tr>
+        {% elif row.type == "summary" %}
+          <tr class="table-info">
+            <td colspan="2"><strong>{{ row.date }} 合計</strong></td>
+            {% for player in players %}
+              {% set info = row.totals.get(player.name) %}
+              <td>
+                {% if info %}
+                  <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            {% endfor %}
+            <td>—</td>
+          </tr>
+        {% endif %}
+      {% endfor %}
+      <tr class="table-warning">
+        <td colspan="2"><strong>全対象期間 合計</strong></td>
+        {% for player in players %}
+          {% set ginfo = grand_totals.get(player.name) %}
+          <td>
+            {% if ginfo %}
+              <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        {% endfor %}
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<a href="{{ url_for('index') }}" class="btn btn-primary">結果入力画面に戻る</a>
+<button id="toggleScoreFormatBtn" class="btn btn-outline-secondary">千点単位表示に切替</button>
+
+<script>
+  const dateLabels = {{ date_labels | tojson }};
+  const scoreTrends = {{ score_trends | tojson }};
+  for (const playerName in scoreTrends) {
+    scoreTrends[playerName] = scoreTrends[playerName] || [];
+  }
+  const dailyScores = {{ daily_scores | tojson }};
+  const xLabels = {{ x_labels | tojson }};
+
+  const ctx = document.getElementById('scoreTrendChart').getContext('2d');
+  const colors = ['red', 'blue', 'green', 'orange', 'purple', 'black'];
+
+  const createGraph = (data, title, xLabel, labels) => {
+    const datasets = [];
+    let colorIndex = 0;
+    for (const playerName in data) {
+      datasets.push({
+        label: playerName,
+        data: data[playerName],
+        fill: false,
+        borderColor: colors[colorIndex % colors.length],
+        tension: 0.2,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+      });
+      colorIndex++;
+    }
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: {
+            display: true,
+            text: title
+          },
+          legend: {
+            position: 'bottom'
+          },
+          tooltip: {
+            mode: 'nearest',
+            intersect: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: false,
+            title: {
+              display: true,
+              text: 'スコア (点)'
             }
-
-            return new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: title
-                        },
-                        legend: {
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            mode: 'nearest',
-                            intersect: false,
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            title: {
-                                display: true,
-                                text: 'スコア (点)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: xLabel
-                            }
-                        }
-                    }
-                }
-            });
-        };
-
-        // 初期状態でトータルスコアグラフを表示
-        let currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
-
-        let chartVisible = false;
-
-        // グラフタイプ変更のイベントリスナー
-        document.querySelectorAll('input[name="graphType"]').forEach((radio) => {
-            radio.addEventListener('change', (event) => {
-
-                chartContainer.style.display = 'none';
-
-                // 現在表示されているグラフを削除
-                currentChart.destroy(); 
-
-                // 選択されたグラフタイプに応じて新しいグラフを作成
-                setTimeout(() => {
-                    if (event.target.value === 'total') {
-                        currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
-                    } else {
-                        currentChart = createGraph(dailyScores, 'ゲーム単位のスコア推移', 'ゲーム単位', xLabels);
-                    }
-
-                    if(chartVisible) chartContainer.style.display = 'block';
-                    currentChart.resize();
-                }, 10);
-            });
-        });
-
-        // グラフの表示・非表示を切り替えるボタン
-        const toggleBtn = document.getElementById('toggleChartBtn');
-        const chartContainer = document.getElementById('chartContainer');
-        
-        toggleBtn.addEventListener('click', () => {
-            if (chartContainer.style.display === 'none') {
-                chartContainer.style.display = 'block';
-                toggleBtn.textContent = 'グラフを非表示';
-                chartVisible = true;
-                currentChart.resize();  // 表示時にサイズ調整
-            } else {
-                chartContainer.style.display = 'none';
-                chartVisible = false;
-                toggleBtn.textContent = 'グラフを表示';
+          },
+          x: {
+            title: {
+              display: true,
+              text: xLabel
             }
-        });
-    </script>     
-    <script>
-        if ('serviceWorker' in navigator) {
-          window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/static/sw.js')
-              .then(registration => {
-                console.log('Service Worker registered with scope:', registration.scope);
-              })
-              .catch(err => {
-                console.log('Service Worker registration failed:', err);
-              });
-          });
+          }
         }
-    </script>
-    <script>
-        const toggleScoreBtn = document.getElementById('toggleScoreFormatBtn');
-        let isThousandUnit = false;
-    
-        toggleScoreBtn.addEventListener('click', () => {
-            isThousandUnit = !isThousandUnit;
-    
-            // 表示切替
-            document.querySelectorAll('.score-value').forEach(el => {
-                const raw = parseInt(el.dataset.raw, 10);
-                if (!isNaN(raw)) {
-                    if (isThousandUnit) {
-                        el.textContent = (raw / 1000).toFixed(1) + ' 点';
-                    } else {
-                        el.textContent = raw + ' 点';
-                    }
-                }
-            });
-    
-            toggleScoreBtn.textContent = isThousandUnit ? '通常表示に切替' : '千点単位表示に切替';
-        });
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            flatpickr("#datePicker", {
-                mode: "multiple",       // 複数選択
-                dateFormat: "Y-m-d",    // YYYY-MM-DD 形式
-                locale: "ja",            // 日本語表示
-                defaultDate: "{{ filter_dates|tojson }}"  // 選択済み日付を配列で渡す
-            });
-        });
-    </script>
-    <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        // table をラッパーしているスクロール可能な要素を取得
-        var wrapper = document.querySelector(".table-responsive.table-scroll-y");
-        if (wrapper) {
-        // 縦スクロールのラッパーがある場合
-        wrapper.scrollTop = wrapper.scrollHeight;
-        } else {
-        // なければページ全体をスクロール
-        window.scrollTo(0, document.body.scrollHeight);
-        }
+      }
     });
-    </script>
+  };
+
+  let currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
+  let chartVisible = false;
+
+  document.querySelectorAll('input[name="graphType"]').forEach((radio) => {
+    radio.addEventListener('change', (event) => {
+      chartContainer.style.display = 'none';
+      currentChart.destroy();
+      setTimeout(() => {
+        if (event.target.value === 'total') {
+          currentChart = createGraph(scoreTrends, '日ごとのトータルスコア推移', '日付', dateLabels);
+        } else {
+          currentChart = createGraph(dailyScores, 'ゲーム単位のスコア推移', 'ゲーム単位', xLabels);
+        }
+        if (chartVisible) chartContainer.style.display = 'block';
+        currentChart.resize();
+      }, 10);
+    });
+  });
+
+  const toggleBtn = document.getElementById('toggleChartBtn');
+  const chartContainer = document.getElementById('scoreTrendChart').parentElement;
+
+  toggleBtn.addEventListener('click', () => {
+    if (chartContainer.style.display === 'none') {
+      chartContainer.style.display = 'block';
+      toggleBtn.textContent = 'グラフを非表示';
+      chartVisible = true;
+      currentChart.resize();
+    } else {
+      chartContainer.style.display = 'none';
+      chartVisible = false;
+      toggleBtn.textContent = 'グラフを表示';
+    }
+  });
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/static/sw.js')
+        .then(registration => {
+          console.log('Service Worker registered with scope:', registration.scope);
+        })
+        .catch(err => {
+          console.log('Service Worker registration failed:', err);
+        });
+    });
+  }
+</script>
+
+<script>
+  const toggleScoreBtn = document.getElementById('toggleScoreFormatBtn');
+  let isThousandUnit = false;
+
+  toggleScoreBtn.addEventListener('click', () => {
+    isThousandUnit = !isThousandUnit;
+    document.querySelectorAll('.score-value').forEach(el => {
+      const raw = parseInt(el.dataset.raw, 10);
+      if (!isNaN(raw)) {
+        if (isThousandUnit) {
+          el.textContent = (raw / 1000).toFixed(1) + ' 点';
+        } else {
+          el.textContent = raw + ' 点';
+        }
+      }
+    });
+    toggleScoreBtn.textContent = isThousandUnit ? '通常表示に切替' : '千点単位表示に切替';
+  });
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    flatpickr("#datePicker", {
+      mode: "multiple",
+      dateFormat: "Y-m-d",
+      locale: "ja",
+      defaultDate: {{ filter_dates|tojson }}
+    });
+  });
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    var wrapper = document.querySelector(".table-responsive.table-scroll-y");
+    if (wrapper) {
+      wrapper.scrollTop = wrapper.scrollHeight;
+    } else {
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+  });
+</script>
 
 {% endblock %}
