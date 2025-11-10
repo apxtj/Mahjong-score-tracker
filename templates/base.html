@@ -83,6 +83,15 @@
         transform: scale(0.95);   /* 95% に縮小 */
       }
     }
+    @media (max-width: 600px) {
+      .table.table-bordered th:nth-child(2),
+      .table.table-bordered td:nth-child(2) {
+        width: 40px;
+        min-width: 30px;
+        font-size: 12px;
+        padding: 2px 4px;
+      }
+    }
     /* テーブルヘッダーをスクロール時固定 */
     .table thead th {
       position: sticky;
