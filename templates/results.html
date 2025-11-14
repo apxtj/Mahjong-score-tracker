@@ -123,7 +123,7 @@
           {% set ginfo = grand_totals.get(player.name) %}
           <td>
             {% if ginfo %}
-              <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }} 点</span><br>{{ ginfo.rank }}位
+              <span class="score-value" data-raw="{{ ginfo.total }}">{{ ginfo.total }}</span><br>{{ ginfo.rank }}位
             {% else %}
               -
             {% endif %}
@@ -266,9 +266,9 @@
       const raw = parseInt(el.dataset.raw, 10);
       if (!isNaN(raw)) {
         if (isThousandUnit) {
-          el.textContent = (raw / 1000).toFixed(1) + ' 点';
+          el.textContent = (raw / 1000).toFixed(1);
         } else {
-          el.textContent = raw + ' 点';
+          el.textContent = raw;
         }
       }
     });

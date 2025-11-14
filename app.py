@@ -178,7 +178,7 @@ def index():
     })
     form_data.update({
     "oka": session.get("last_oka", 0),
-    "uma": session.get("last_uma", "30000,10000,-10000,-30000"),
+    "uma": session.get("last_uma", "20000,-20000,-40000,-60000"),
     })
 
     return render_template("index.html", players=players, error=error, form_data=form_data)
