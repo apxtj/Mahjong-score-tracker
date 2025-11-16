@@ -67,6 +67,13 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
                 type: cred.type || "public-key"  // type が無い場合は 'public-key' とする
             }))
         );
+        
+        // デバッグ：登録されている credential id をログに出力
+        console.log("Allow Credentials count:", allowCredentials.length);
+        options.allowCredentials.forEach((cred, idx) => {
+            console.log(`Credential ${idx} (base64url):`, cred.id);
+            console.log(`Credential ${idx} (array):`, new Uint8Array(allowCredentials[idx].id));
+        });
 
         // challenge の存在を確認してから変換
         if (!options.challenge) {
@@ -108,6 +115,10 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
             errorDiv.textContent = "認証に失敗しました。";
             return;
         }
+
+        // デバッグ：スマホから返ってきた credential の rawId をログに出力
+        console.log("Credential from device (rawId):", new Uint8Array(credential.rawId));
+        console.log("Credential from device (rawId hex):", Array.from(new Uint8Array(credential.rawId)).map(b => b.toString(16).padStart(2, '0')).join(''));
 
         // 3️⃣ 認証結果をサーバーに送信
         const authData = {

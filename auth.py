@@ -55,17 +55,29 @@ def login_start():
         # チャレンジをbase64urlエンコードしてクライアントに渡す
         challenge_encoded = websafe_encode(options.public_key.challenge)
 
+        # デバッグ：DBに保存されているcredential_idをログ出力
+        logger.debug("=== login_start debug ===")
+        logger.debug("RP_ID: %s", RP_ID)
+        logger.debug("ORIGIN: %s", ORIGIN)
+        logger.debug("DB credential_id (hex): %s", credential.credential_id.hex())
+        logger.debug("DB credential_id (len): %d bytes", len(credential.credential_id))
+        
+        # allow_credentials に含まれる credential_id もログ出力
+        allow_creds_list = []
+        for cred in options.public_key.allow_credentials:
+            cred_id_hex = cred.id.hex()
+            logger.debug("allow_credentials id (hex): %s", cred_id_hex)
+            logger.debug("allow_credentials id (len): %d bytes", len(cred.id))
+            allow_creds_list.append({
+                "type": cred.type,
+                "id": websafe_encode(cred.id)
+            })
+
         return jsonify({
             "challenge": challenge_encoded,
             "rpId": options.public_key.rp_id,
             "timeout": options.public_key.timeout,
-            "allowCredentials": [
-                {
-                    "type": cred.type,
-                    "id": websafe_encode(cred.id)
-                }
-                for cred in options.public_key.allow_credentials
-            ],
+            "allowCredentials": allow_creds_list,
             "userVerification": options.public_key.user_verification,
             "rp": options.public_key.rp_id,
             "user": {
@@ -99,6 +111,11 @@ def login_finish():
         decoded_client_data_json = base64url_decode(data["clientDataJSON"])
         decoded_authenticator_data = base64url_decode(data["authenticatorData"])
         decoded_signature = base64url_decode(data["signature"])
+        
+        # デバッグ：スマホから返ってきたrawIdをログ出力
+        logger.debug("=== login_finish debug ===")
+        logger.debug("Received rawId (hex): %s", decoded_raw_id.hex())
+        logger.debug("Received rawId (len): %d bytes", len(decoded_raw_id))
 
         # 認証状態をセッションから取得
         auth_state = session.get("auth_state")
@@ -143,9 +160,17 @@ def login_finish():
         )
 
         # 認証が成功した場合
+        # セッションをクリア（不要なデータを削除）
+        session.pop("auth_state", None)
+        session.pop("auth_credential_id", None)
+        
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.exception("login_finish failed")
+        # エラー時はセッションをクリア（認証失敗したのでログイン状態にしない）
+        session.pop("auth_state", None)
+        session.pop("auth_credential_id", None)
+        session.pop("login_user_id", None)
         return jsonify({"error": "Login failed"}), 400
 
 #以下デバッグ用登録処理
@@ -160,18 +185,24 @@ def register_start():
         if not username:
             return jsonify({"error": "Username required"}), 400
 
+        # 既に登録済みかチェック
         user = User.query.filter_by(username=username).first()
-        if not user:
-            user = User(username=username)
-            db.session.add(user)
-            db.session.commit()
+        if user:
+            return jsonify({"error": "Username already exists"}), 400
 
+        # ユーザーを DB に保存せず、セッションに仮保存
+        # register_finish で credential 作成成功後に初めて DB に保存
+        session["register_username"] = username
+        
         # FIDO2 サーバーにユーザー情報を渡す
+        # 仮の user_id として username のハッシュを使用
+        user_id_bytes = username.encode("utf-8")
+        
         options, state = server.register_begin(
             {
-                "id": str(user.id).encode("utf-8"),
-                "name": user.username,
-                "displayName": user.username,
+                "id": user_id_bytes,
+                "name": username,
+                "displayName": username,
             },
             credentials=[],
             user_verification="preferred",
@@ -179,7 +210,6 @@ def register_start():
 
         # state を session に保存
         session["register_state"] = state
-        session["register_user_id"] = user.id
 
         # options.public_key から取得（ここが重要）
         pk = options.public_key
@@ -220,9 +250,9 @@ def base64url_decode(base64url):
 @bp.route("/register_finish", methods=["POST"])
 def register_finish():
     try:
-        user = User.query.get(session.get("register_user_id"))
-        if not user:
-            return jsonify({"error": "User session not found"}), 400
+        username = session.get("register_username")
+        if not username:
+            return jsonify({"error": "Registration session not found"}), 400
 
         data = request.json
 
@@ -245,6 +275,11 @@ def register_finish():
         # ここまできたら、credential が返ってきているはず
         cred_data = credential.credential_data
 
+        # credential 作成成功後に初めてユーザーを作成
+        user = User(username=username)
+        db.session.add(user)
+        db.session.flush()  # ID を生成させるが、コミットはまだ
+        
         # 公開鍵をバイト列として保存
         cred = Credential(
             user_id=user.id,
@@ -255,8 +290,14 @@ def register_finish():
         db.session.add(cred)
         db.session.commit()
 
+        # セッションをクリア
+        session.pop("register_state", None)
+        session.pop("register_username", None)
+
         return jsonify({"status": "ok"})
 
     except Exception as e:
+        # エラー時はロールバック（User と Credential が保存されない）
+        db.session.rollback()
         logger.exception("register_finish failed")
         return jsonify({"error": "Registration failed"}), 400
