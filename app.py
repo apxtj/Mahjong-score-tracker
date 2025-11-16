@@ -25,7 +25,9 @@ app.config.update(
 )
 
 # Configure basic logging
-logging.basicConfig(level=logging.INFO)
+debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
+log_level = logging.DEBUG if debug_mode else logging.INFO
+logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
 
 # SQLiteデータベースの設定

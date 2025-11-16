@@ -6,7 +6,13 @@ from fido2.utils import websafe_encode, websafe_decode
 from models import db, User, Credential
 import os
 import traceback
+
+# Configure logger with debug mode
+debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
+log_level = logging.DEBUG if debug_mode else logging.INFO
+logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
+
 from fido2.webauthn import PublicKeyCredentialRpEntity
 import json
 
@@ -31,14 +37,24 @@ def login_start():
         if not username:
             return jsonify({"error": "Username required"}), 400
 
+        logger.debug("=== login_start ===")
+        logger.debug("Username: %s", username)
+
         user = User.query.filter_by(username=username).first()
         if not user:
+            logger.debug("User not found")
             return jsonify({"error": "User not found"}), 404
+
+        logger.debug("User found with id: %d", user.id)
 
         # 登録されているCredentialを取得
         credential = Credential.query.filter_by(user_id=user.id).first()
         if not credential:
+            logger.debug("No credential registered for user")
             return jsonify({"error": "No credential registered"}), 400
+
+        logger.debug("Credential found with id (DB pk): %d", credential.id)
+        logger.debug("Credential credential_id (hex): %s", credential.credential_id.hex())
 
         # public_keyはAttestedCredentialDataのバイト表現なので、直接復元する
         cred_data = AttestedCredentialData(credential.public_key)
@@ -48,9 +64,12 @@ def login_start():
 
         # 認証状態をセッションに保存（バイナリはセッションに入れない）
         session["auth_state"] = state
-        session["login_user_id"] = user.id
+        # ← login_user_id はまだ設定しない（login_finish で認証成功後に設定）
+        session["auth_user_id"] = user.id  # 認証用の一時的なID（ログイン状態ではない）
         # 後で使用するためにDBレコードIDのみを保存（バイナリはDBに保持）
         session["auth_credential_id"] = credential.id
+        
+        logger.debug("Session updated: auth_user_id=%d (temp), auth_credential_id=%d", user.id, credential.id)
 
         # チャレンジをbase64urlエンコードしてクライアントに渡す
         challenge_encoded = websafe_encode(options.public_key.challenge)
@@ -100,9 +119,20 @@ from fido2.webauthn import AuthenticatorAssertionResponse
 @bp.route("/login_finish", methods=["POST"])
 def login_finish():
     try:
-        user = User.query.get(session.get("login_user_id"))
+        logger.debug("=== login_finish start ===")
+        
+        # 認証用の一時的なユーザーID を取得（ログイン状態ではない）
+        auth_user_id = session.get("auth_user_id")
+        if not auth_user_id:
+            logger.debug("auth_user_id not found in session")
+            return jsonify({"error": "Authentication session not found"}), 400
+
+        user = User.query.get(auth_user_id)
         if not user:
-            return jsonify({"error": "User session not found"}), 400
+            logger.debug("User from session not found")
+            return jsonify({"error": "User not found"}), 400
+
+        logger.debug("User from session: id=%d, username=%s", user.id, user.username)
 
         data = request.json
 
@@ -120,15 +150,23 @@ def login_finish():
         # 認証状態をセッションから取得
         auth_state = session.get("auth_state")
         if not auth_state:
+            logger.debug("auth_state not found in session")
             raise ValueError("Authentication state not found in session")
 
         # セッションから保存されたCredentialレコードIDを取得し、DBから復元
         auth_cred_id = session.get("auth_credential_id")
         if not auth_cred_id:
+            logger.debug("auth_credential_id not found in session")
             raise ValueError("Credential id not found in session")
+        
+        logger.debug("auth_credential_id from session: %d", auth_cred_id)
+        
         cred_record = Credential.query.get(auth_cred_id)
         if not cred_record:
+            logger.debug("Credential record not found in DB")
             raise ValueError("Credential record not found")
+
+        logger.debug("Credential record found: credential_id (hex) = %s", cred_record.credential_id.hex())
 
         # AttestedCredentialDataを復元（public_keyにbytesで保存している）
         cred_data = AttestedCredentialData(cred_record.public_key)
@@ -152,6 +190,8 @@ def login_finish():
             response=assertion_response,
         )
 
+        logger.debug("About to call authenticate_complete")
+
         # FIDO2サーバーで認証結果を完了させる
         credential = server.authenticate_complete(
             auth_state,
@@ -159,18 +199,25 @@ def login_finish():
             auth_response
         )
 
-        # 認証が成功した場合
-        # セッションをクリア（不要なデータを削除）
+        logger.debug("authenticate_complete succeeded")
+
+        # 認証が成功した場合に初めて login_user_id を設定（ログイン状態にする）
+        session["login_user_id"] = user.id
+        # 認証用の一時データをクリア
         session.pop("auth_state", None)
+        session.pop("auth_user_id", None)
         session.pop("auth_credential_id", None)
+        logger.debug("Authentication succeeded: login_user_id set to %d", user.id)
         
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.exception("login_finish failed")
-        # エラー時はセッションをクリア（認証失敗したのでログイン状態にしない）
+        # エラー時はセッションを完全にクリア（認証失敗）
         session.pop("auth_state", None)
+        session.pop("auth_user_id", None)
         session.pop("auth_credential_id", None)
         session.pop("login_user_id", None)
+        logger.debug("Session completely cleared on error")
         return jsonify({"error": "Login failed"}), 400
 
 #以下デバッグ用登録処理
@@ -259,6 +306,9 @@ def register_finish():
         # base64urlデコード
         decoded_raw_id = base64url_decode(data["id"])
         
+        logger.debug("=== register_finish start ===")
+        logger.debug("Username: %s", username)
+        
         # register_complete 呼び出し
         credential = server.register_complete(
             session["register_state"],
@@ -272,13 +322,18 @@ def register_finish():
             }
         )
         
+        logger.debug("register_complete succeeded")
+        
         # ここまできたら、credential が返ってきているはず
         cred_data = credential.credential_data
+        logger.debug("credential_id (hex): %s", cred_data.credential_id.hex())
+        logger.debug("credential_id (len): %d bytes", len(cred_data.credential_id))
 
         # credential 作成成功後に初めてユーザーを作成
         user = User(username=username)
         db.session.add(user)
         db.session.flush()  # ID を生成させるが、コミットはまだ
+        logger.debug("User created with id: %d", user.id)
         
         # 公開鍵をバイト列として保存
         cred = Credential(
@@ -289,10 +344,12 @@ def register_finish():
         )
         db.session.add(cred)
         db.session.commit()
+        logger.debug("Credential saved successfully")
 
         # セッションをクリア
         session.pop("register_state", None)
         session.pop("register_username", None)
+        logger.debug("Session cleared after registration")
 
         return jsonify({"status": "ok"})
 
