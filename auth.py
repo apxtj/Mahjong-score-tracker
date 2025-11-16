@@ -253,6 +253,8 @@ def register_start():
             },
             credentials=[],
             user_verification="preferred",
+            resident_key="required",
+            authenticator_attachment="platform",
         )
 
         # state を session に保存
