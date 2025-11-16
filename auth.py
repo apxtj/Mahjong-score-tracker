@@ -252,9 +252,9 @@ def register_start():
                 "displayName": username,
             },
             credentials=[],
-            user_verification="preferred",
-            resident_key="required",
+            resident_key_requirement="required",
             authenticator_attachment="platform",
+            user_verification="preferred"
         )
 
         # state を session に保存
