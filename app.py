@@ -7,43 +7,50 @@ from flask import flash
 from collections import defaultdict
 from flask import request
 import os
+from functools import wraps
+from flask import redirect, url_for
+from models import db, User, Player, Game
+
+import logging
 
 app = Flask(__name__)
-app.secret_key = "your-secret-key"
+# Secret key should come from environment in production
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+# Session cookie hardening for production
+app.config.update(
+    SESSION_COOKIE_SECURE=bool(os.environ.get("SESSION_COOKIE_SECURE", "True") == "True"),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
+)
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # SQLiteデータベースの設定
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///mahjong.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+db.init_app(app)
 migrate = Migrate(app, db)
 
-# プレイヤー（船籍）モデル
-class Player(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
-    total_score = db.Column(db.Integer, default=0)  # 累計スコア
+from auth import bp as auth_bp
+app.register_blueprint(auth_bp)
 
-# ゲーム戦績モデル
-class Game(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, default=lambda: (datetime.utcnow() + timedelta(hours=9)).date())
-    player1_id = db.Column(db.Integer, db.ForeignKey('player.id'))
-    player2_id = db.Column(db.Integer, db.ForeignKey('player.id'))
-    player3_id = db.Column(db.Integer, db.ForeignKey('player.id'))
-    player4_id = db.Column(db.Integer, db.ForeignKey('player.id'))
-    score1 = db.Column(db.Integer)
-    score2 = db.Column(db.Integer)
-    score3 = db.Column(db.Integer)
-    score4 = db.Column(db.Integer)
-    player1 = db.relationship('Player', foreign_keys=[player1_id])
-    player2 = db.relationship('Player', foreign_keys=[player2_id])
-    player3 = db.relationship('Player', foreign_keys=[player3_id])
-    player4 = db.relationship('Player', foreign_keys=[player4_id])
-    oka = db.Column(db.Integer, default=0)      # おかを追加
-    uma1 = db.Column(db.Integer, default=0)     # うま1位
-    uma2 = db.Column(db.Integer, default=0)
-    uma3 = db.Column(db.Integer, default=0)
-    uma4 = db.Column(db.Integer, default=0)
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        logger.debug("login_user_id in session: %s", session.get("login_user_id"))
+        if "login_user_id" not in session:
+            logger.debug("Redirecting to login")
+            return redirect(url_for("auth.login_page", next=request.path))
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.route("/logout")
+def logout():
+    session.pop("login_user_id", None)  # ログイン情報削除
+    return redirect(url_for("auth.login_page"))
 
 def recalc_total_scores():
     players = Player.query.all()
@@ -70,6 +77,7 @@ def recalc_total_scores():
 
 
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     players = Player.query.all()
     error = None
@@ -184,6 +192,7 @@ def index():
     return render_template("index.html", players=players, error=error, form_data=form_data)
 
 @app.route("/results")
+@login_required
 def results():
     recalc_total_scores()
 
@@ -356,11 +365,13 @@ def results():
     )
 
 @app.route("/players")
+@login_required
 def players():
     players = Player.query.all()
     return render_template("players.html", players=players)
 
 @app.route("/add_player", methods=["GET", "POST"])
+@login_required
 def add_player():
     if request.method == "POST":
         player_name = request.form["name"]
@@ -372,6 +383,7 @@ def add_player():
     return render_template("add_player.html")
 
 @app.route("/delete_player/<int:player_id>", methods=["POST"])
+@login_required
 def delete_player(player_id):
     player = Player.query.get_or_404(player_id)
 
@@ -392,6 +404,7 @@ def delete_player(player_id):
     return redirect(url_for('players'))
 
 @app.route("/edit_player/<int:player_id>", methods=["GET", "POST"])
+@login_required
 def edit_player(player_id):
     player = Player.query.get_or_404(player_id)
     
@@ -409,6 +422,7 @@ def edit_player(player_id):
 
 
 @app.route("/delete_game/<int:game_id>", methods=["POST"])
+@login_required
 def delete_game(game_id):
     game = Game.query.get_or_404(game_id)
     db.session.delete(game)
@@ -419,6 +433,15 @@ def delete_game(game_id):
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()  # アプリケーションコンテキスト内でDB作成
+        # In local development (default sqlite) it's convenient to create tables automatically.
+        # In production (Postgres via DATABASE_URL / Render), prefer using migrations (Alembic/Flask-Migrate).
+        uri = app.config.get('SQLALCHEMY_DATABASE_URI', '') or ''
+        is_sqlite = uri.startswith('sqlite:')
+        debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
 
-    app.run(debug=True)
+        if is_sqlite or debug_mode or os.environ.get("FORCE_CREATE_ALL", "False") == "True":
+            # Only auto-create tables for local sqlite or when explicitly requested
+            db.create_all()
+
+    # Run the app. In production Render will use Procfile (gunicorn). Here we honor env vars.
+    app.run(host=os.environ.get("FLASK_HOST", "127.0.0.1"), port=int(os.environ.get("FLASK_PORT", 5000)), debug=debug_mode)

@@ -148,6 +148,13 @@
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('results') }}">戦績一覧</a></li>
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('add_player') }}">プレイヤー情報追加</a></li>
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('players') }}">プレイヤー情報一覧</a></li>
+          {% if session.get('login_user_id') %}
+          <li class="nav-item me-3">
+            <form action="{{ url_for('logout') }}" method="get" class="d-inline">
+              <button type="submit" class="btn btn-outline-danger btn-sm">ログアウト</button>
+            </form>
+          </li>
+          {% endif %}
         </ul>
       </div>
     </div>

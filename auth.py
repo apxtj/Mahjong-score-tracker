@@ -1,0 +1,262 @@
+from flask import Blueprint, request, jsonify, session, render_template
+import logging
+from fido2.server import Fido2Server,AuthenticationResponse
+from fido2.webauthn import PublicKeyCredentialRequestOptions, AttestedCredentialData, CollectedClientData, AuthenticatorData, AuthenticatorAssertionResponse, AuthenticationResponse as AuthenticationResponseWA
+from fido2.utils import websafe_encode, websafe_decode
+from models import db, User, Credential
+import os
+import traceback
+logger = logging.getLogger(__name__)
+from fido2.webauthn import PublicKeyCredentialRpEntity
+import json
+
+bp = Blueprint("auth", __name__)
+
+# RP (Relying Party) and origin should be configurable for production
+# Use environment variables when deployed (Render), otherwise keep localhost defaults
+RP_ID = os.environ.get("RP_ID", "localhost")
+ORIGIN = os.environ.get("ORIGIN", "http://localhost:5000")
+
+rp = PublicKeyCredentialRpEntity(id=RP_ID, name=os.environ.get("RP_NAME", "Mahjong App"))
+server = Fido2Server(rp)
+
+@bp.route("/login")
+def login_page():
+    return render_template("login.html")
+
+@bp.route("/login_start", methods=["POST"])
+def login_start():
+    try:
+        username = request.json.get("username")
+        if not username:
+            return jsonify({"error": "Username required"}), 400
+
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # 登録されているCredentialを取得
+        credential = Credential.query.filter_by(user_id=user.id).first()
+        if not credential:
+            return jsonify({"error": "No credential registered"}), 400
+
+        # public_keyはAttestedCredentialDataのバイト表現なので、直接復元する
+        cred_data = AttestedCredentialData(credential.public_key)
+
+        # FIDO2 サーバーで認証開始（チャレンジとオプションを生成）
+        options, state = server.authenticate_begin([cred_data])
+
+        # 認証状態をセッションに保存（バイナリはセッションに入れない）
+        session["auth_state"] = state
+        session["login_user_id"] = user.id
+        # 後で使用するためにDBレコードIDのみを保存（バイナリはDBに保持）
+        session["auth_credential_id"] = credential.id
+
+        # チャレンジをbase64urlエンコードしてクライアントに渡す
+        challenge_encoded = websafe_encode(options.public_key.challenge)
+
+        return jsonify({
+            "challenge": challenge_encoded,
+            "rpId": options.public_key.rp_id,
+            "timeout": options.public_key.timeout,
+            "allowCredentials": [
+                {
+                    "type": cred.type,
+                    "id": websafe_encode(cred.id)
+                }
+                for cred in options.public_key.allow_credentials
+            ],
+            "userVerification": options.public_key.user_verification,
+            "rp": options.public_key.rp_id,
+            "user": {
+                "id": websafe_encode(str(user.id).encode()),
+                "name": user.username,
+                "displayName": user.username
+            }
+        })
+    except Exception as e:
+        logger.exception("login_start failed")
+        return jsonify({"error": "Login start failed"}), 500
+
+
+
+from fido2.client import PublicKeyCredentialDescriptor  # 必要なインポートを追加
+
+
+from fido2.webauthn import AuthenticatorAssertionResponse
+
+@bp.route("/login_finish", methods=["POST"])
+def login_finish():
+    try:
+        user = User.query.get(session.get("login_user_id"))
+        if not user:
+            return jsonify({"error": "User session not found"}), 400
+
+        data = request.json
+
+        # Base64urlでエンコードされているデータをデコード
+        decoded_raw_id = base64url_decode(data["rawId"])
+        decoded_client_data_json = base64url_decode(data["clientDataJSON"])
+        decoded_authenticator_data = base64url_decode(data["authenticatorData"])
+        decoded_signature = base64url_decode(data["signature"])
+
+        # 認証状態をセッションから取得
+        auth_state = session.get("auth_state")
+        if not auth_state:
+            raise ValueError("Authentication state not found in session")
+
+        # セッションから保存されたCredentialレコードIDを取得し、DBから復元
+        auth_cred_id = session.get("auth_credential_id")
+        if not auth_cred_id:
+            raise ValueError("Credential id not found in session")
+        cred_record = Credential.query.get(auth_cred_id)
+        if not cred_record:
+            raise ValueError("Credential record not found")
+
+        # AttestedCredentialDataを復元（public_keyにbytesで保存している）
+        cred_data = AttestedCredentialData(cred_record.public_key)
+
+        # CollectedClientDataオブジェクトを作成（バイト列を直接渡す）
+        client_data = CollectedClientData(decoded_client_data_json)
+
+        # AuthenticatorDataオブジェクトを作成
+        authenticator_data = AuthenticatorData(decoded_authenticator_data)
+
+        # AuthenticatorAssertionResponseオブジェクトを作成
+        assertion_response = AuthenticatorAssertionResponse(
+            client_data=client_data,
+            authenticator_data=authenticator_data,
+            signature=decoded_signature,
+        )
+
+        # AuthenticationResponseオブジェクトを作成
+        auth_response = AuthenticationResponseWA(
+            raw_id=decoded_raw_id,
+            response=assertion_response,
+        )
+
+        # FIDO2サーバーで認証結果を完了させる
+        credential = server.authenticate_complete(
+            auth_state,
+            [cred_data],
+            auth_response
+        )
+
+        # 認証が成功した場合
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.exception("login_finish failed")
+        return jsonify({"error": "Login failed"}), 400
+
+#以下デバッグ用登録処理
+@bp.route("/register")
+def register_page():
+    return render_template("register.html")
+
+@bp.route("/register_start", methods=["POST"])
+def register_start():
+    try:
+        username = request.json.get("username")
+        if not username:
+            return jsonify({"error": "Username required"}), 400
+
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            user = User(username=username)
+            db.session.add(user)
+            db.session.commit()
+
+        # FIDO2 サーバーにユーザー情報を渡す
+        options, state = server.register_begin(
+            {
+                "id": str(user.id).encode("utf-8"),
+                "name": user.username,
+                "displayName": user.username,
+            },
+            credentials=[],
+            user_verification="preferred",
+        )
+
+        # state を session に保存
+        session["register_state"] = state
+        session["register_user_id"] = user.id
+
+        # options.public_key から取得（ここが重要）
+        pk = options.public_key
+
+        logger.debug("challenge type: %s", type(pk.challenge))
+        logger.debug("encoded: %s", websafe_encode(pk.challenge))
+
+        response = {
+            "challenge": websafe_encode(pk.challenge),
+            "rp": {
+                "id": pk.rp.id,
+                "name": pk.rp.name,
+            },
+            "user": {
+                "id": websafe_encode(pk.user.id),
+                "name": pk.user.name,
+                "displayName": pk.user.display_name if hasattr(pk.user, "display_name") else pk.user.name,
+            },
+            "pubKeyCredParams": [
+                {"type": p.type, "alg": p.alg} for p in pk.pub_key_cred_params
+            ],
+            "authenticatorSelection": pk.authenticator_selection,
+            "attestation": pk.attestation,
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.exception("register_start failed")
+        return jsonify({"error": "Registration start failed"}), 500
+
+from base64 import urlsafe_b64decode
+
+def base64url_decode(base64url):
+    # URLセーフなBase64でエンコードされた文字列をデコード
+    return urlsafe_b64decode(base64url + '==' if len(base64url) % 4 else base64url)
+
+@bp.route("/register_finish", methods=["POST"])
+def register_finish():
+    try:
+        user = User.query.get(session.get("register_user_id"))
+        if not user:
+            return jsonify({"error": "User session not found"}), 400
+
+        data = request.json
+
+        # base64urlデコード
+        decoded_raw_id = base64url_decode(data["id"])
+        
+        # register_complete 呼び出し
+        credential = server.register_complete(
+            session["register_state"],
+            {
+                "id": decoded_raw_id,  # id をデコードしてバイト列に変換
+                "rawId": websafe_decode(data["rawId"]),  # rawId はデコードしてバイト列に
+                "response": {
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "attestationObject": websafe_decode(data["attestationObject"]),
+                },
+            }
+        )
+        
+        # ここまできたら、credential が返ってきているはず
+        cred_data = credential.credential_data
+
+        # 公開鍵をバイト列として保存
+        cred = Credential(
+            user_id=user.id,
+            credential_id=cred_data.credential_id,
+            public_key=bytes(cred_data),  # AttestedCredentialDataのバイト表現をそのまま保存
+            sign_count=credential.counter,
+        )
+        db.session.add(cred)
+        db.session.commit()
+
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        logger.exception("register_finish failed")
+        return jsonify({"error": "Registration failed"}), 400

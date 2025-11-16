@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>登録</title>
+</head>
+<body>
+<h2>ユーザー登録</h2>
+<form id="registerForm">
+  <input type="text" id="username" placeholder="ユーザー名" required>
+  <button type="submit">登録</button>
+</form>
+<div id="error"></div>
+<script>
+async function base64ToArrayBuffer(base64) {
+    const binary = atob(base64.replace(/_/g, '/').replace(/-/g, '+'));
+    const len = binary.length;
+    const buffer = new ArrayBuffer(len);
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < len; i++) view[i] = binary.charCodeAt(i);
+    return buffer;
+}
+async function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+document.getElementById("registerForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("username").value.trim();
+    const errorDiv = document.getElementById("error");
+    errorDiv.textContent = "";
+
+    try {
+        const startResp = await fetch("/register_start", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({username})
+        });
+        const options = await startResp.json();
+        if (options.error) { errorDiv.textContent = options.error; return; }
+
+        const publicKey = {
+            challenge: await base64ToArrayBuffer(options.challenge),
+            rp: options.rp,
+            user: { 
+                id: await base64ToArrayBuffer(options.user.id),
+                name: options.user.name,
+                displayName: options.user.displayName
+            },
+            pubKeyCredParams: options.pubKeyCredParams,
+            authenticatorSelection: options.authenticatorSelection, // optional だけど推奨
+            attestation: options.attestation, // optional
+            timeout: options.timeout // optional
+        };
+
+        const cred = await navigator.credentials.create({ publicKey });
+        const data = {
+            id: cred.id,                   // id は文字列のまま
+            rawId: await arrayBufferToBase64(cred.rawId),
+            attestationObject: await arrayBufferToBase64(cred.response.attestationObject),
+            clientDataJSON: await arrayBufferToBase64(cred.response.clientDataJSON)
+        };
+
+        const finishResp = await fetch("/register_finish", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(data)
+        });
+        const result = await finishResp.json();
+        if (result.status === "ok") alert("登録成功！");
+        else errorDiv.textContent = "登録失敗: " + (result.error || "不明なエラー");
+    } catch (err) {
+        console.error(err);
+        errorDiv.textContent = err;
+    }
+});
+</script>
+</body>
+</html>
