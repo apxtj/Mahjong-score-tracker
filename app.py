@@ -40,14 +40,18 @@ from auth import bp as auth_bp
 app.register_blueprint(auth_bp)
 
 def login_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        logger.debug("login_user_id in session: %s", session.get("login_user_id"))
-        if "login_user_id" not in session:
-            logger.debug("Redirecting to login")
-            return redirect(url_for("auth.login_page", next=request.path))
-        return f(*args, **kwargs)
-    return wrapper
+    # @wraps(f)
+    # def wrapper(*args, **kwargs):
+    #     logger.debug("login_user_id in session: %s", session.get("login_user_id"))
+    #     if "login_user_id" not in session:
+    #         logger.debug("Redirecting to login")
+    #         return redirect(url_for("auth.login_page", next=request.path))
+    #     return f(*args, **kwargs)
+    # return wrapper
+    # 一時的に認証を無効化するため、デコレータを no-op にしています。
+    # 必要に応じて元の実装に戻してください。
+    logger.info("Authentication disabled: login_required is a no-op.")
+    return f
 
 @app.route("/logout")
 def logout():

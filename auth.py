@@ -246,7 +246,7 @@ def register_start():
         user_id_bytes = username.encode("utf-8")
         
         options, state = server.register_begin(
-            {
+            user={
                 "id": user_id_bytes,
                 "name": username,
                 "displayName": username,
