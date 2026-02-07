@@ -1,0 +1,38 @@
+/* 麻雀戦績管理アプリ用のカスタムスタイル */
+
+/* 基本的なスタイルはBootstrap5で提供されているため、ここではカスタマイズのみ */
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* テーブルのホバー効果 */
+.table tbody tr:hover {
+  background-color: #f5f5f5;
+}
+
+/* ボタンのカスタマイズ */
+.btn {
+  transition: all 0.3s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* コンテナの最大幅調整 */
+.container {
+  max-width: 1200px;
+}
+
+/* スマートフォン対応 */
+@media (max-width: 768px) {
+  .navbar {
+    font-size: 0.9rem;
+  }
+
+  .table {
+    font-size: 0.85rem;
+  }
+}

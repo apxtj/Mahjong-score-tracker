@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from flask_migrate import Migrate
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask import flash
 from collections import defaultdict
 from flask import request
@@ -425,6 +425,79 @@ def edit_player(player_id):
             flash("名前を入力してください。")
 
     return render_template("edit_player.html", player=player)
+
+
+def calculate_payment(total_cost, player_food_costs, late_players, player_rankings):
+    """
+    Calculate payment amounts for each player.
+    
+    Args:
+        total_cost: Total game & drink cost (int)
+        player_food_costs: dict {player_name: food_cost}
+        late_players: set of player names who were late
+        player_rankings: dict {player_name: rank} where rank is 1-4
+    
+    Returns:
+        dict {player_name: total_payment}
+    """
+    players_list = list(player_food_costs.keys())
+    total_food = sum(player_food_costs.values())
+    game_drink_cost = total_cost - total_food
+    
+    # Step 1: Each player pays their food cost
+    payments = {name: player_food_costs[name] for name in players_list}
+    
+    # Step 2: Late players pay 10% of (game_drink_cost - total_food)
+    # Actually: 10% of (game_drink_cost) since total_food is already deducted from total_cost
+    late_share = game_drink_cost * 0.1
+    for late_player in late_players:
+        if late_player in payments:
+            payments[late_player] += late_share
+    
+    # Step 3: Distribute remaining amount by ranking
+    remaining_cost = game_drink_cost - (len(late_players) * late_share)
+    rank_percentages = {1: 0.10, 2: 0.20, 3: 0.30, 4: 0.40}
+    
+    for player_name, rank in player_rankings.items():
+        if rank in rank_percentages:
+            payments[player_name] += remaining_cost * rank_percentages[rank]
+    
+    return {name: round(amount, 0) for name, amount in payments.items()}
+
+
+@app.route("/calculate_payment", methods=["POST"])
+@login_required
+def calculate_payment_route():
+    """API endpoint to calculate payment amounts."""
+    try:
+        data = request.json
+        total_cost = float(data.get("total_cost", 0))
+        player_food_costs = {name: float(cost) for name, cost in data.get("player_food_costs", {}).items()}
+        late_players = set(data.get("late_players", []))
+
+        # `player_rankings` may be sent as {name: rank} or {name: {"rank": rank, ...}}
+        raw_rankings = data.get("player_rankings", {}) or {}
+        player_rankings = {}
+        for name, val in raw_rankings.items():
+            if isinstance(val, dict):
+                # expected structure: {"total": ..., "rank": N}
+                rank_val = val.get("rank")
+            else:
+                rank_val = val
+
+            if rank_val is None:
+                raise ValueError(f"順位が不明なプレイヤーがあります: {name}")
+
+            try:
+                player_rankings[name] = int(rank_val)
+            except Exception:
+                raise ValueError(f"無効な順位値: {name} -> {rank_val}")
+
+        result = calculate_payment(total_cost, player_food_costs, late_players, player_rankings)
+        return jsonify({"success": True, "payments": result})
+    except Exception as e:
+        logger.exception("Payment calculation failed")
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 @app.route("/delete_game/<int:game_id>", methods=["POST"])

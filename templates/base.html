@@ -126,6 +126,67 @@
         text-align: center;
       }
     }
+
+    /* 支払い計算機関連スタイル */
+    .payment-calc-btn {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      margin: 0 2px;
+    }
+
+    .payment-modal-content {
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .payment-info-block {
+      background-color: #f8f9fa;
+      border-left: 4px solid #007bff;
+      padding: 12px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+    }
+
+    .payment-info-block h5 {
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .payment-info-item {
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+    }
+
+    .payment-form-section {
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+
+    .payment-result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .payment-result-row:last-child {
+      border-bottom: none;
+    }
+
+    .payment-result-name {
+      font-weight: 600;
+      min-width: 120px;
+    }
+
+    .payment-result-amount {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #28a745;
+    }
   </style>
     <!-- PWA用のマニフェストファイルへのリンク -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">

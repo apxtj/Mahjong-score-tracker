@@ -104,7 +104,10 @@
           <tr class="table-info">
             <td colspan="2">
               <strong>{{ row.date }} 合計</strong>
-              <button class="btn btn-sm btn-outline-info payment-calc-btn" data-key="date_{{ loop.index0 }}">
+              <button class="btn btn-sm btn-outline-info payment-calc-btn" 
+                      data-date="{{ row.date }}"
+                      data-rankings="{{ row.totals|tojson|safe }}"
+                      data-filter-dates="">
                 💳 支払い計算
               </button>
             </td>
@@ -127,10 +130,20 @@
           <strong>全対象期間 合計</strong>
           {% if filter_dates|length > 0 %}
             <span class="text-muted">({{ filter_dates|first }} ～ {{ filter_dates|last }})</span>
+            <button class="btn btn-sm btn-outline-warning payment-calc-btn" 
+                    data-date=""
+                    data-rankings="{{ grand_totals|tojson|safe }}"
+                    data-filter-dates="{{ filter_dates|tojson|safe }}">
+              💳 支払い計算
+            </button>
+          {% else %}
+            <button class="btn btn-sm btn-outline-warning payment-calc-btn" 
+                    data-date=""
+                    data-rankings="{{ grand_totals|tojson|safe }}"
+                    data-filter-dates="">
+              💳 支払い計算
+            </button>
           {% endif %}
-          <button class="btn btn-sm btn-outline-warning payment-calc-btn" data-key="grand_total">
-            💳 支払い計算
-          </button>
         </td>
         {% for player in players %}
           {% set ginfo = grand_totals.get(player.name) %}
@@ -195,47 +208,35 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-          <button type="button" class="btn btn-outline-success" onclick="capturePaymentModal()">画像で共有</button>
-          <button type="button" class="btn btn-primary" onclick="calculatePaymentAmounts()">計算する</button>
+        <button type="button" class="btn btn-primary" onclick="calculatePaymentAmounts()">計算する</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-  // データをJavaScriptで管理
-  const paymentDataMap = {
-    {% for row in table_data %}
-      {% if row.type == "summary" %}
-        'date_{{ loop.index0 }}': {
-          date: '{{ row.date }}',
-          rankings: {{ row.totals|tojson }},
-          filterDates: null
-        },
-      {% endif %}
-    {% endfor %}
-    'grand_total': {
-      date: null,
-      rankings: {{ grand_totals|tojson }},
-      filterDates: {% if filter_dates %}{{ filter_dates|tojson }}{% else %}null{% endif %}
-    }
-  };
-
-  const allPlayers = {{ players|map(attribute='name')|list|tojson }};
   let currentPaymentData = {
     date: null,
     rankings: {},
-    filterDates: null
+    filterDates: null,
+    allPlayers: {{ players|map(attribute='name')|list|tojson }}
   };
 
-  // ボタンのイベントリスナーを設定
+  // ボタンのイベントリスナーを動的に設定
   document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.payment-calc-btn').forEach(button => {
       button.addEventListener('click', function() {
-        const key = this.dataset.key;
-        const data = paymentDataMap[key];
-        if (data) {
-          openPaymentModal(data.date, data.rankings, data.filterDates);
+        const date = this.dataset.date || null;
+        const rankingsJson = this.dataset.rankings || '{}';
+        const filterDatesJson = this.dataset.filterDates || null;
+
+        try {
+          const rankings = JSON.parse(rankingsJson);
+          const filterDates = filterDatesJson ? JSON.parse(filterDatesJson) : null;
+          openPaymentModal(date === '' ? null : date, rankings, filterDates);
+        } catch (e) {
+          console.error('Failed to parse payment data:', e);
+          alert('ボタンのデータ解析に失敗しました');
         }
       });
     });
@@ -267,7 +268,7 @@
     // フード代入力欄の生成
     const foodContainer = document.getElementById('foodCostsContainer');
     foodContainer.innerHTML = '';
-    for (const name of allPlayers) {
+    for (const name of currentPaymentData.allPlayers) {
       foodContainer.innerHTML += `
         <div class="input-group mb-2">
           <span class="input-group-text">${name}</span>
@@ -280,7 +281,7 @@
     // 遅刻チェックボックスの生成
     const lateContainer = document.getElementById('latePlayersContainer');
     lateContainer.innerHTML = '';
-    for (const name of allPlayers) {
+    for (const name of currentPaymentData.allPlayers) {
       lateContainer.innerHTML += `
         <div class="form-check">
           <input class="form-check-input late-player-checkbox" type="checkbox" id="late_${name}" data-player="${name}">
@@ -369,51 +370,6 @@
 
     resultContainer.innerHTML = resultHtml;
     resultBlock.style.display = 'block';
-  }
-
-  // モーダル内容を画像化して新しいタブで表示／ダウンロードする
-  function capturePaymentModal() {
-    const modalContent = document.querySelector('#paymentModal .modal-content');
-    if (!modalContent) {
-      alert('モーダルが見つかりません');
-      return;
-    }
-
-    if (typeof html2canvas === 'undefined') {
-      alert('html2canvas が読み込まれていません。再読み込みしてください。');
-      return;
-    }
-
-    // scale を上げて高解像度の画像を作る
-    html2canvas(modalContent, { scale: 2 }).then(canvas => {
-      try {
-        const dataUrl = canvas.toDataURL('image/png');
-
-        // 新しいタブで画像を表示
-        const win = window.open();
-        if (win) {
-          win.document.write('<title>支払い計算画像</title>');
-          win.document.write('<img src="' + dataUrl + '" style="max-width:100%; height:auto;">');
-          // ダウンロード用リンクを追加
-          win.document.write('<div style="margin-top:10px;"><a href="' + dataUrl + '" download="payment_summary.png">画像をダウンロード</a></div>');
-          win.document.close();
-        } else {
-          // ポップアップブロック等のときは自動でダウンロード
-          const a = document.createElement('a');
-          a.href = dataUrl;
-          a.download = 'payment_summary.png';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }
-      } catch (err) {
-        console.error(err);
-        alert('画像生成に失敗しました');
-      }
-    }).catch(err => {
-      console.error(err);
-      alert('画像化に失敗しました');
-    });
   }
 </script>
 
@@ -577,8 +533,5 @@
     }
   });
 </script>
-
-<!-- html2canvas: モーダルを画像化するため -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaPHk+qjG8g5EXAMPLEHASHREPLACE==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 {% endblock %}
