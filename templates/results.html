@@ -239,6 +239,62 @@
         }
       });
     });
+
+    // 同じゲーム内の詳細点数を連動させる
+    // ゲームIDごとに状態を管理
+    const gameDetailStates = {};
+    
+    document.querySelectorAll('.score-toggle').forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+
+        const targetId = this.getAttribute('href').substring(1);
+        
+        // ゲームIDを抽出（例：detail-12-0 → 12）
+        const gameIdMatch = targetId.match(/detail-(\d+)-/);
+        if (!gameIdMatch) return;
+        
+        const gameId = gameIdMatch[1];
+        
+        // このゲームの全詳細要素を取得
+        const allDetailsForGame = document.querySelectorAll(`[id^="detail-${gameId}-"]`);
+        
+        if (allDetailsForGame.length === 0) return;
+
+        // ゲームの状態を初期化（未設定の場合）
+        if (!gameDetailStates[gameId]) {
+          gameDetailStates[gameId] = {
+            isShown: false,
+            collapses: {}
+          };
+          // Collapseインスタンスを作成
+          allDetailsForGame.forEach(detail => {
+            gameDetailStates[gameId].collapses[detail.id] = new bootstrap.Collapse(detail, { toggle: false });
+          });
+        }
+
+        // 現在の状態を反転
+        gameDetailStates[gameId].isShown = !gameDetailStates[gameId].isShown;
+
+        // すべての詳細を統一された状態に変更
+        allDetailsForGame.forEach(detailElement => {
+          const collapse = gameDetailStates[gameId].collapses[detailElement.id];
+          if (gameDetailStates[gameId].isShown) {
+            collapse.show();
+          } else {
+            collapse.hide();
+          }
+        });
+
+        // すべてのリンクのアイコンを更新
+        document.querySelectorAll(`[href^="#detail-${gameId}-"]`).forEach(link => {
+          const icon = link.querySelector('.toggle-icon');
+          if (icon) {
+            icon.textContent = gameDetailStates[gameId].isShown ? '▼' : '▶';
+          }
+        });
+      });
+    });
   });
 
   function openPaymentModal(date, rankings, filterDates) {
