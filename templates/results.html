@@ -195,7 +195,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-          <button type="button" class="btn btn-outline-success" onclick="capturePaymentModal()">画像で共有</button>
+          <button type="button" class="btn btn-outline-success" id="captureBtn" onclick="capturePaymentModal()" disabled>画像で共有</button>
           <button type="button" class="btn btn-primary" onclick="calculatePaymentAmounts()">計算する</button>
       </div>
     </div>
@@ -369,48 +369,101 @@
 
     resultContainer.innerHTML = resultHtml;
     resultBlock.style.display = 'block';
+
+    // 「画像で共有」ボタンを有効化
+    const captureBtn = document.getElementById('captureBtn');
+    if (captureBtn) {
+      captureBtn.disabled = false;
+    }
   }
 
   // モーダル内容を画像化して新しいタブで表示／ダウンロードする
   function capturePaymentModal() {
-    const modalContent = document.querySelector('#paymentModal .modal-content');
-    if (!modalContent) {
-      alert('モーダルが見つかりません');
-      return;
-    }
-
     if (typeof html2canvas === 'undefined') {
       alert('html2canvas が読み込まれていません。再読み込みしてください。');
       return;
     }
 
-    // scale を上げて高解像度の画像を作る
-    html2canvas(modalContent, { scale: 2 }).then(canvas => {
+    // モーダルから情報を取得
+    const dateInfo = document.getElementById('paymentDateInfo').innerText || '';
+    const rankInfo = document.getElementById('paymentRankInfo').innerHTML || '';
+    const resultBlock = document.getElementById('paymentResultBlock');
+    const resultsContainer = document.getElementById('paymentResultsContainer').innerHTML || '';
+
+    // 明細用のHTML要素を作成
+    const receiptHtml = document.createElement('div');
+    receiptHtml.style.cssText = `
+      padding: 30px;
+      background: white;
+      font-family: Arial, sans-serif;
+      width: 500px;
+      box-sizing: border-box;
+    `;
+    
+    receiptHtml.innerHTML = `
+      <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 15px;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">支払い計算明細書</h2>
+      </div>
+      
+      <div style="margin-bottom: 20px; font-size: 14px; line-height: 1.8;">
+        ${dateInfo}
+      </div>
+      
+      <div style="margin-bottom: 20px; font-size: 13px; line-height: 1.8;">
+        ${rankInfo}
+      </div>
+      
+      ${resultBlock && resultBlock.style.display !== 'none' ? `
+      <div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 15px; font-size: 16px;">
+        <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: bold;">支払い額</h3>
+        <div style="line-height: 2.2;">
+          ${resultsContainer}
+        </div>
+      </div>
+      ` : '<p style="color: #999;">計算結果がまだ表示されていません。先に「計算する」ボタンを押してください。</p>'}
+      
+      <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #999;">
+        <p>${new Date().toLocaleString('ja-JP')}</p>
+      </div>
+    `;
+
+    // 一時的にDOMに追加してキャプチャ
+    document.body.appendChild(receiptHtml);
+
+    html2canvas(receiptHtml, { 
+      scale: 2,
+      allowTaint: true,
+      useCORS: true,
+      logging: false
+    }).then(canvas => {
       try {
+        document.body.removeChild(receiptHtml);
         const dataUrl = canvas.toDataURL('image/png');
 
         // 新しいタブで画像を表示
         const win = window.open();
         if (win) {
-          win.document.write('<title>支払い計算画像</title>');
+          win.document.write('<title>支払い計算明細書</title>');
           win.document.write('<img src="' + dataUrl + '" style="max-width:100%; height:auto;">');
           // ダウンロード用リンクを追加
-          win.document.write('<div style="margin-top:10px;"><a href="' + dataUrl + '" download="payment_summary.png">画像をダウンロード</a></div>');
+          win.document.write('<div style="margin-top:10px;"><a href="' + dataUrl + '" download="payment_receipt.png">画像をダウンロード</a></div>');
           win.document.close();
         } else {
           // ポップアップブロック等のときは自動でダウンロード
           const a = document.createElement('a');
           a.href = dataUrl;
-          a.download = 'payment_summary.png';
+          a.download = 'payment_receipt.png';
           document.body.appendChild(a);
           a.click();
           a.remove();
         }
       } catch (err) {
+        document.body.removeChild(receiptHtml);
         console.error(err);
         alert('画像生成に失敗しました');
       }
     }).catch(err => {
+      document.body.removeChild(receiptHtml);
       console.error(err);
       alert('画像化に失敗しました');
     });
