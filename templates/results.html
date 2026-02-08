@@ -105,7 +105,7 @@
             <td colspan="2">
               <strong>{{ row.date }} 合計</strong>
               <button class="btn btn-sm btn-outline-info payment-calc-btn" data-key="date_{{ loop.index0 }}">
-                💳 支払い計算
+               💳 
               </button>
             </td>
             {% for player in players %}
@@ -129,7 +129,7 @@
             <span class="text-muted">({{ filter_dates|first }} ～ {{ filter_dates|last }})</span>
           {% endif %}
           <button class="btn btn-sm btn-outline-warning payment-calc-btn" data-key="grand_total">
-            💳 支払い計算
+           💳 
           </button>
         </td>
         {% for player in players %}
