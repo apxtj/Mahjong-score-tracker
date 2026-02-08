@@ -153,7 +153,7 @@
 
 <!-- 支払い計算モーダル -->
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content payment-modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="paymentModalLabel">支払い計算</h5>
@@ -195,7 +195,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-          <button type="button" class="btn btn-outline-success" id="captureBtn" onclick="capturePaymentModal()" disabled>画像で共有</button>
+          <button type="button" class="btn btn-outline-success" id="captureBtn" onclick="capturePaymentModal()" disabled style="display:none;">画像で共有</button>
           <button type="button" class="btn btn-primary" onclick="calculatePaymentAmounts()">計算する</button>
       </div>
     </div>
@@ -245,6 +245,14 @@
     currentPaymentData.date = date;
     currentPaymentData.rankings = rankings;
     currentPaymentData.filterDates = filterDates;
+
+    // 「画像で共有」ボタンは計算後にのみ表示する
+    const captureBtn = document.getElementById('captureBtn');
+    if (captureBtn) {
+      captureBtn.disabled = true;
+      captureBtn.style.display = 'none';
+      captureBtn.title = '';
+    }
 
     // 確定情報の表示
     const dateInfo = document.getElementById('paymentDateInfo');
@@ -370,10 +378,21 @@
     resultContainer.innerHTML = resultHtml;
     resultBlock.style.display = 'block';
 
-    // 「画像で共有」ボタンを有効化
+    // 結果エリアまで自動スクロール
+    const modalBody = document.querySelector('#paymentModal .modal-body');
+    if (modalBody) {
+      // 少し遅延させてDOMの更新が完了してからスクロール
+      setTimeout(() => {
+        modalBody.scrollTop = resultBlock.offsetTop;
+      }, 50);
+    }
+
+    // 「画像で共有」ボタンを表示して有効化
     const captureBtn = document.getElementById('captureBtn');
     if (captureBtn) {
       captureBtn.disabled = false;
+      captureBtn.style.display = 'inline-block';
+      captureBtn.title = '';
     }
   }
 
