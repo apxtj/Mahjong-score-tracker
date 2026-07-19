@@ -239,7 +239,7 @@ def results():
 
         player_daily_totals = {p.name: 0 for p in players}
 
-        for idx, game in enumerate(games_on_date, start=1):
+        for idx, game in enumerate(reversed(games_on_date), start=1):
             scores = [
                 {"player": game.player1, "score": game.score1, "uma": game.uma1},
                 {"player": game.player2, "score": game.score2, "uma": game.uma2},
@@ -328,7 +328,7 @@ def results():
         
         # 各プレイヤーの日付ごとのスコア
         daily_total_score = {name: 0 for name in player_names}
-        for game in games_on_date:
+        for game in reversed(games_on_date):
             scores = [
                 {"player": game.player1, "score": game.score1},
                 {"player": game.player2, "score": game.score2},
