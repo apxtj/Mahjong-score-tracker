@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from flask_migrate import Migrate
+from sqlalchemy import func
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask import flash
 from collections import defaultdict
@@ -504,7 +505,37 @@ def calculate_payment_route():
 @login_required
 def profile(player_id):
     player = Player.query.get_or_404(player_id)
-    stats = player.calculate_stats()
+
+    # 全メンバーのプロフィール指標を比較して、各指標のトップを判定
+    players = Player.query.order_by(Player.id).all()
+    player_stats = {p.id: p.calculate_stats() for p in players}
+
+    # ゲーム未参加プレイヤーは比較対象外
+    valid_stats = [s for s in player_stats.values() if s['total_games'] > 0]
+
+    best_values = {}
+    if valid_stats:
+        best_values = {
+            'avg_rank': min(valid_stats, key=lambda s: s['avg_rank'])['avg_rank'],
+            'last_avoidance_rate': max(valid_stats, key=lambda s: s['last_avoidance_rate'])['last_avoidance_rate'],
+            'avg_raw_score': max(valid_stats, key=lambda s: s['avg_raw_score'])['avg_raw_score'],
+            'max_raw_score': max(valid_stats, key=lambda s: s['max_raw_score'])['max_raw_score'],
+            'min_raw_score': max(valid_stats, key=lambda s: s['min_raw_score'])['min_raw_score'],
+            'max_consecutive_top1': max(valid_stats, key=lambda s: s['max_consecutive_top1'])['max_consecutive_top1'],
+            'max_consecutive_top2': max(valid_stats, key=lambda s: s['max_consecutive_top2'])['max_consecutive_top2'],
+            'max_consecutive_last': min(valid_stats, key=lambda s: s['max_consecutive_last'])['max_consecutive_last'],
+        }
+
+    stats = player_stats[player.id]
+    stats['best_avg_rank'] = stats['total_games'] > 0 and stats['avg_rank'] == best_values.get('avg_rank')
+    stats['best_last_avoidance_rate'] = stats['total_games'] > 0 and stats['last_avoidance_rate'] == best_values.get('last_avoidance_rate')
+    stats['best_avg_raw_score'] = stats['total_games'] > 0 and stats['avg_raw_score'] == best_values.get('avg_raw_score')
+    stats['best_max_raw_score'] = stats['total_games'] > 0 and stats['max_raw_score'] == best_values.get('max_raw_score')
+    stats['best_min_raw_score'] = stats['total_games'] > 0 and stats['min_raw_score'] == best_values.get('min_raw_score')
+    stats['best_max_consecutive_top1'] = stats['total_games'] > 0 and stats['max_consecutive_top1'] == best_values.get('max_consecutive_top1')
+    stats['best_max_consecutive_top2'] = stats['total_games'] > 0 and stats['max_consecutive_top2'] == best_values.get('max_consecutive_top2')
+    stats['best_max_consecutive_last'] = stats['total_games'] > 0 and stats['max_consecutive_last'] == best_values.get('max_consecutive_last')
+
     return render_template("profile.html", player=player, stats=stats)
 
 

@@ -7,7 +7,12 @@
   <!-- ヘッダー -->
   <div class="row mb-5">
     <div class="col-md-8">
-      <h1 class="display-5 mb-2">{{ player.name }}</h1>
+      <div class="profile-header-title d-flex align-items-center gap-2 mb-2">
+        <h1 class="display-5 mb-0">{{ player.name }}</h1>
+        {% if is_top_player %}
+          <span class="top-player-medal" title="メンバー中トップ成績">🥇</span>
+        {% endif %}
+      </div>
       <p class="text-muted fs-5">総対戦数: <strong>{{ stats.total_games }}</strong> ゲーム</p>
     </div>
     <div class="col-md-4 text-end">
@@ -25,7 +30,10 @@
       <div class="row g-4">
         <div class="col-12">
           <div class="card h-100">
-            <div class="card-body text-center">
+            <div class="card-body text-center stat-card-body">
+              {% if stats.best_avg_rank %}
+                <span class="stat-medal" title="メンバー中最高">🥇</span>
+              {% endif %}
               <h5 class="card-title text-muted">平均着順</h5>
               <p class="display-6 fw-bold text-primary">{{ stats.avg_rank }}</p>
               <small class="text-muted">点数に基づく平均順位</small>
@@ -34,7 +42,10 @@
         </div>
         <div class="col-12">
           <div class="card h-100">
-            <div class="card-body text-center">
+            <div class="card-body text-center stat-card-body">
+              {% if stats.best_last_avoidance_rate %}
+                <span class="stat-medal" title="メンバー中最高">🥇</span>
+              {% endif %}
               <h5 class="card-title text-muted">ラス回避率</h5>
               <p class="display-6 fw-bold text-success">{{ stats.last_avoidance_rate }}%</p>
               <small class="text-muted">4位を避けた割合</small>
@@ -66,7 +77,10 @@
     <!-- 平均素点 -->
     <div class="col-md-6 mb-4">
       <div class="card">
-        <div class="card-body text-center">
+        <div class="card-body text-center stat-card-body">
+          {% if stats.best_avg_raw_score %}
+            <span class="stat-medal" title="メンバー中最高">🥇</span>
+          {% endif %}
           <h5 class="card-title text-muted">平均素点</h5>
           <p class="display-6 fw-bold text-info">{{ stats.avg_raw_score }}</p>
           <small class="text-muted">終了時点での平均点数（順位点抜き）</small>
@@ -95,7 +109,10 @@
     <!-- 最高素点 -->
     <div class="col-md-6 mb-4">
       <div class="card border-success">
-        <div class="card-body">
+        <div class="card-body stat-card-body">
+          {% if stats.best_max_raw_score %}
+            <span class="stat-medal" title="メンバー中最高">🥇</span>
+          {% endif %}
           <h5 class="card-title text-success">🏆 最高素点</h5>
           <p class="display-6 fw-bold text-success">{{ stats.max_raw_score }}</p>
         </div>
@@ -105,7 +122,10 @@
     <!-- 最低素点 -->
     <div class="col-md-6 mb-4">
       <div class="card border-danger">
-        <div class="card-body">
+        <div class="card-body stat-card-body">
+          {% if stats.best_min_raw_score %}
+            <span class="stat-medal" title="メンバー中最高（最低素点）">🥇</span>
+          {% endif %}
           <h5 class="card-title text-danger">📉 最低素点</h5>
           <p class="display-6 fw-bold text-danger">{{ stats.min_raw_score }}</p>
         </div>
@@ -117,7 +137,10 @@
       <div class="row">
         <div class="col-md-4">
           <div class="card">
-            <div class="card-body text-center">
+            <div class="card-body text-center stat-card-body">
+              {% if stats.best_max_consecutive_top1 %}
+                <span class="stat-medal" title="メンバー中最高">🥇</span>
+              {% endif %}
               <h5 class="card-title text-muted">最高連続トップ数</h5>
               <p class="display-5 fw-bold text-primary">{{ stats.max_consecutive_top1 }}</p>
               <small>連続1位</small>
@@ -126,7 +149,10 @@
         </div>
         <div class="col-md-4">
           <div class="card">
-            <div class="card-body text-center">
+            <div class="card-body text-center stat-card-body">
+              {% if stats.best_max_consecutive_top2 %}
+                <span class="stat-medal" title="メンバー中最高">🥇</span>
+              {% endif %}
               <h5 class="card-title text-muted">最高連続連対数</h5>
               <p class="display-5 fw-bold text-info">{{ stats.max_consecutive_top2 }}</p>
               <small>連続1・2位</small>
@@ -135,7 +161,10 @@
         </div>
         <div class="col-md-4">
           <div class="card">
-            <div class="card-body text-center">
+            <div class="card-body text-center stat-card-body">
+              {% if stats.best_max_consecutive_last %}
+                <span class="stat-medal" title="メンバー中最高">🥇</span>
+              {% endif %}
               <h5 class="card-title text-muted">最高連続ラス数</h5>
               <p class="display-5 fw-bold text-danger">{{ stats.max_consecutive_last }}</p>
               <small>連続4位</small>
@@ -174,6 +203,33 @@
   .card-title {
     font-size: 0.95rem;
     letter-spacing: 0.5px;
+  }
+  .stat-card-body {
+    position: relative;
+  }
+  .stat-medal {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    font-size: 1.2rem;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: rgba(255, 215, 0, 0.95);
+    box-shadow: 0 1px 10px rgba(0, 0, 0, 0.12);
+  }
+  .profile-header-title {
+    align-items: flex-start;
+  }
+  .top-player-medal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #FFD700, #FFC107);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.12);
+    font-size: 1.25rem;
   }
   .rank-chart-wrapper {
     width: 100%;
