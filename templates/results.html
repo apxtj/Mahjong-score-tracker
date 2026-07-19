@@ -57,7 +57,7 @@
         <th>ゲーム日</th>
         <th>ゲーム数</th>
         {% for player in players %}
-          <th>{{ player.name }}</th>
+          <th><a href="{{ url_for('profile', player_id=player.id) }}" class="player-profile-link">{{ player.name }}</a></th>
         {% endfor %}
         <th>操作</th>
       </tr>
@@ -112,7 +112,7 @@
               {% set info = row.totals.get(player.name) %}
               <td>
                 {% if info %}
-                  <span class="score-value" data-raw="{{ info.total }}">{{ info.total }} 点</span><br>{{ info.rank }}位
+                  <span class="score-value" data-raw="{{ info.total }}">{{ info.total }}</span><br>{{ info.rank }}位
                 {% else %}
                   -
                 {% endif %}
@@ -708,5 +708,24 @@
 
 <!-- html2canvas: モーダルを画像化するため -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+  .player-profile-link {
+    color: #0d6efd;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+  }
+
+  .player-profile-link:hover {
+    color: #0b5ed7;
+    border-bottom-color: #0d6efd;
+    text-decoration: none;
+  }
+
+  .player-profile-link:hover .score-value {
+    font-weight: 600;
+  }
+</style>
 
 {% endblock %}

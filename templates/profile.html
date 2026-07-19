@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}{{ player.name }} プロフィール{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <!-- ヘッダー -->
+  <div class="row mb-5">
+    <div class="col-md-8">
+      <h1 class="display-5 mb-2">{{ player.name }}</h1>
+      <p class="text-muted fs-5">総対戦数: <strong>{{ stats.total_games }}</strong> ゲーム</p>
+    </div>
+    <div class="col-md-4 text-end">
+      <a href="{{ url_for('results') }}" class="btn btn-outline-secondary">成績表に戻る</a>
+    </div>
+  </div>
+
+  <!-- 安定度セクション -->
+  <div class="row mb-5">
+    <div class="col-md-12">
+      <h2 class="border-bottom pb-3 mb-4">🎯 【安定度】</h2>
+    </div>
+
+    <!-- 平均着順 -->
+    <div class="col-md-4 mb-4">
+      <div class="card">
+        <div class="card-body text-center">
+          <h5 class="card-title text-muted">平均着順</h5>
+          <p class="display-6 fw-bold text-primary">{{ stats.avg_rank }}</p>
+          <small class="text-muted">点数に基づく平均順位</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- 位率グラフ -->
+    <div class="col-md-8 mb-4">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title text-muted mb-4">着順率</h5>
+          <div style="position: relative; width: 100%; max-width: 350px; margin: 0 auto;">
+            <canvas id="rankDistributionChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ラス回避率 -->
+    <div class="col-md-4 mb-4">
+      <div class="card">
+        <div class="card-body text-center">
+          <h5 class="card-title text-muted">ラス回避率</h5>
+          <p class="display-6 fw-bold text-success">{{ stats.last_avoidance_rate }}%</p>
+          <small class="text-muted">4位を避けた割合</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 雀風セクション -->
+  <div class="row mb-5">
+    <div class="col-md-12">
+      <h2 class="border-bottom pb-3 mb-4">🎲 【雀風】</h2>
+    </div>
+
+    <!-- 平均素点 -->
+    <div class="col-md-6 mb-4">
+      <div class="card">
+        <div class="card-body text-center">
+          <h5 class="card-title text-muted">平均素点</h5>
+          <p class="display-6 fw-bold text-info">{{ stats.avg_raw_score }}</p>
+          <small class="text-muted">終了時点での平均点数（順位点抜き）</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- 標準偏差 -->
+    <div class="col-md-6 mb-4">
+      <div class="card">
+        <div class="card-body text-center">
+          <h5 class="card-title text-muted">標準偏差</h5>
+          <p class="display-6 fw-bold text-warning">{{ stats.raw_score_std_dev }}</p>
+          <small class="text-muted">素点のばらつき（低いほど安定）</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 記録セクション -->
+  <div class="row mb-5">
+    <div class="col-md-12">
+      <h2 class="border-bottom pb-3 mb-4">📊 【記録】</h2>
+    </div>
+
+    <!-- 最高素点 -->
+    <div class="col-md-6 mb-4">
+      <div class="card border-success">
+        <div class="card-body">
+          <h5 class="card-title text-success">🏆 最高素点</h5>
+          <p class="display-6 fw-bold text-success">{{ stats.max_raw_score }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 最低素点 -->
+    <div class="col-md-6 mb-4">
+      <div class="card border-danger">
+        <div class="card-body">
+          <h5 class="card-title text-danger">📉 最低素点</h5>
+          <p class="display-6 fw-bold text-danger">{{ stats.min_raw_score }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 連続記録 -->
+    <div class="col-md-12 mb-4">
+      <div class="row">
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body text-center">
+              <h5 class="card-title text-muted">最高連続トップ数</h5>
+              <p class="display-5 fw-bold text-primary">{{ stats.max_consecutive_top1 }}</p>
+              <small>連続1位</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body text-center">
+              <h5 class="card-title text-muted">最高連続連対数</h5>
+              <p class="display-5 fw-bold text-info">{{ stats.max_consecutive_top2 }}</p>
+              <small>連続1・2位</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body text-center">
+              <h5 class="card-title text-muted">最高連続ラス数</h5>
+              <p class="display-5 fw-bold text-danger">{{ stats.max_consecutive_last }}</p>
+              <small>連続4位</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 戻るボタン -->
+  <div class="row mt-5 mb-5">
+    <div class="col-md-12 text-end">
+      <a href="{{ url_for('players') }}" class="btn btn-secondary">プレイヤー一覧に戻る</a>
+      <a href="{{ url_for('results') }}" class="btn btn-primary">成績表に戻る</a>
+    </div>
+  </div>
+</div>
+
+<style>
+  .card {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .display-5, .display-6 {
+    font-weight: 700;
+  }
+
+  .card-title {
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('rankDistributionChart').getContext('2d');
+    
+    const rank1Rate = {{ stats.rank_1_rate }};
+    const rank2Rate = {{ stats.rank_2_rate }};
+    const rank3Rate = {{ stats.rank_3_rate }};
+    const rank4Rate = {{ stats.rank_4_rate }};
+
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['1位', '2位', '3位', '4位'],
+        datasets: [{
+          data: [rank1Rate, rank2Rate, rank3Rate, rank4Rate],
+          backgroundColor: [
+            '#FF6B6B',  // 1位: 赤
+            '#4ECDC4',  // 2位: 青緑
+            '#95E1D3',  // 3位: 薄緑
+            '#FFB6B6'   // 4位: ライト赤
+          ],
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              padding: 15,
+              font: {
+                size: 13,
+                weight: '600'
+              }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.label + ': ' + context.parsed + '%';
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+</script>
+
+{% endblock %}

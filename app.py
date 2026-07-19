@@ -500,6 +500,14 @@ def calculate_payment_route():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+@app.route("/profile/<int:player_id>")
+@login_required
+def profile(player_id):
+    player = Player.query.get_or_404(player_id)
+    stats = player.calculate_stats()
+    return render_template("profile.html", player=player, stats=stats)
+
+
 @app.route("/delete_game/<int:game_id>", methods=["POST"])
 @login_required
 def delete_game(game_id):

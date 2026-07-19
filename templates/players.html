@@ -28,6 +28,7 @@
                     <td>{{ player.name }}</td>
                     <td>{{ player.total_score }}</td>
                     <td>
+                        <a href="{{ url_for('profile', player_id=player.id) }}" class="btn btn-info btn-sm">プロフィール</a>
                         <form action="{{ url_for('delete_player', player_id=player.id) }}" method="post" style="display:inline-block;">
                             <button class="btn btn-danger btn-sm" onclick="return confirm('削除しますか？')">削除</button>
                         </form>
