@@ -21,13 +21,25 @@
       <h2 class="border-bottom pb-3 mb-4">🎯 【安定度】</h2>
     </div>
 
-    <!-- 平均着順 -->
     <div class="col-md-4 mb-4">
-      <div class="card">
-        <div class="card-body text-center">
-          <h5 class="card-title text-muted">平均着順</h5>
-          <p class="display-6 fw-bold text-primary">{{ stats.avg_rank }}</p>
-          <small class="text-muted">点数に基づく平均順位</small>
+      <div class="row g-4">
+        <div class="col-12">
+          <div class="card h-100">
+            <div class="card-body text-center">
+              <h5 class="card-title text-muted">平均着順</h5>
+              <p class="display-6 fw-bold text-primary">{{ stats.avg_rank }}</p>
+              <small class="text-muted">点数に基づく平均順位</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="card h-100">
+            <div class="card-body text-center">
+              <h5 class="card-title text-muted">ラス回避率</h5>
+              <p class="display-6 fw-bold text-success">{{ stats.last_avoidance_rate }}%</p>
+              <small class="text-muted">4位を避けた割合</small>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -37,20 +49,9 @@
       <div class="card">
         <div class="card-body">
           <h5 class="card-title text-muted mb-4">着順率</h5>
-          <div style="position: relative; width: 100%; max-width: 350px; margin: 0 auto;">
+          <div class="rank-chart-wrapper fixed-square-chart">
             <canvas id="rankDistributionChart"></canvas>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ラス回避率 -->
-    <div class="col-md-4 mb-4">
-      <div class="card">
-        <div class="card-body text-center">
-          <h5 class="card-title text-muted">ラス回避率</h5>
-          <p class="display-6 fw-bold text-success">{{ stats.last_avoidance_rate }}%</p>
-          <small class="text-muted">4位を避けた割合</small>
         </div>
       </div>
     </div>
@@ -174,47 +175,68 @@
     font-size: 0.95rem;
     letter-spacing: 0.5px;
   }
+  .rank-chart-wrapper {
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .fixed-square-chart {
+    width: 360px;
+    height: 360px;
+    max-width: 100%;
+    margin: 0 auto;
+    position: relative;
+  }
+  .rank-chart-wrapper canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    const ctx = document.getElementById('rankDistributionChart').getContext('2d');
-    
+    const canvas = document.getElementById('rankDistributionChart');
+    canvas.width = 360;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+
     const rank1Rate = {{ stats.rank_1_rate }};
     const rank2Rate = {{ stats.rank_2_rate }};
     const rank3Rate = {{ stats.rank_3_rate }};
     const rank4Rate = {{ stats.rank_4_rate }};
 
+    const dataValues = [rank1Rate, rank2Rate, rank3Rate, rank4Rate];
+
+    Chart.register(ChartDataLabels);
+
     new Chart(ctx, {
-      type: 'doughnut',
+      type: 'pie',
       data: {
         labels: ['1位', '2位', '3位', '4位'],
         datasets: [{
-          data: [rank1Rate, rank2Rate, rank3Rate, rank4Rate],
+          data: dataValues,
           backgroundColor: [
-            '#FF6B6B',  // 1位: 赤
-            '#4ECDC4',  // 2位: 青緑
-            '#95E1D3',  // 3位: 薄緑
-            '#FFB6B6'   // 4位: ライト赤
+            '#FF6B6B',
+            '#4ECDC4',
+            '#95E1D3',
+            '#FFB6B6'
           ],
           borderColor: '#ffffff',
           borderWidth: 2
         }]
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: true,
+        responsive: false,
+        maintainAspectRatio: false,
+        aspectRatio: 1,
+        rotation: Math.PI,
         plugins: {
           legend: {
-            position: 'bottom',
-            labels: {
-              padding: 15,
-              font: {
-                size: 13,
-                weight: '600'
-              }
-            }
+            display: false
           },
           tooltip: {
             callbacks: {
@@ -222,9 +244,22 @@
                 return context.label + ': ' + context.parsed + '%';
               }
             }
+          },
+          datalabels: {
+            color: '#000',
+            formatter: function(value) {
+              return value + '%';
+            },
+            font: {
+              weight: '700',
+              size: 14
+            },
+            anchor: 'center',
+            align: 'center'
           }
         }
-      }
+      },
+      plugins: [ChartDataLabels]
     });
   });
 </script>
