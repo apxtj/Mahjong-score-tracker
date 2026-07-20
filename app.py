@@ -10,7 +10,7 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game
+from models import db, User, Player, Game, Title
 
 import logging
 
@@ -536,7 +536,61 @@ def profile(player_id):
     stats['best_max_consecutive_top2'] = stats['total_games'] > 0 and stats['max_consecutive_top2'] == best_values.get('max_consecutive_top2')
     stats['best_max_consecutive_last'] = stats['total_games'] > 0 and stats['max_consecutive_last'] == best_values.get('max_consecutive_last')
 
-    return render_template("profile.html", player=player, stats=stats)
+    # 装備中の称号の条件確認と自動削除
+    for slot_attr, title_attr in [('active_title_1_id', 'active_title_1'), 
+                                    ('active_title_2_id', 'active_title_2'), 
+                                    ('active_title_3_id', 'active_title_3')]:
+        title_id = getattr(player, slot_attr)
+        if title_id:
+            title = Title.query.get(title_id)
+            if title and not title.check_unlocked(player):
+                # 条件を満たさなくなったので外す
+                setattr(player, slot_attr, None)
+    
+    db.session.commit()
+
+    # 取得可能な称号を計算
+    acquired_titles = []
+    all_titles = Title.query.all()
+    for title in all_titles:
+        if title.check_unlocked(player):
+            acquired_titles.append({
+                'id': title.id,
+                'name': title.name,
+                'badge_filename': title.badge_filename
+            })
+
+    return render_template("profile.html", player=player, stats=stats, acquired_titles=acquired_titles)
+
+
+@app.route("/api/player/<int:player_id>/title/update", methods=["POST"])
+def update_player_title(player_id):
+    """プレイヤーの装備中の称号を更新"""
+    data = request.get_json()
+    player = Player.query.get_or_404(player_id)
+    
+    slot = data.get('slot')  # 1, 2, または 3
+    title_id = data.get('title_id')  # nullは許可（外す場合）
+    
+    if slot not in [1, 2, 3]:
+        return jsonify({'error': 'Invalid slot'}), 400
+    
+    # タイトルが指定されている場合、取得可能か確認
+    if title_id:
+        title = Title.query.get_or_404(title_id)
+        if not title.check_unlocked(player):
+            return jsonify({'error': 'Title not unlocked'}), 403
+    
+    # スロットを更新
+    if slot == 1:
+        player.active_title_1_id = title_id
+    elif slot == 2:
+        player.active_title_2_id = title_id
+    elif slot == 3:
+        player.active_title_3_id = title_id
+    
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route("/delete_game/<int:game_id>", methods=["POST"])

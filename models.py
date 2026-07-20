@@ -21,6 +21,15 @@ class Player(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     total_score = db.Column(db.Integer, default=0)  # 累計スコア
+    
+    # 使用中の称号（最大3つ）
+    active_title_1_id = db.Column(db.Integer, db.ForeignKey('title.id'), nullable=True)
+    active_title_2_id = db.Column(db.Integer, db.ForeignKey('title.id'), nullable=True)
+    active_title_3_id = db.Column(db.Integer, db.ForeignKey('title.id'), nullable=True)
+    
+    active_title_1 = db.relationship('Title', foreign_keys=[active_title_1_id])
+    active_title_2 = db.relationship('Title', foreign_keys=[active_title_2_id])
+    active_title_3 = db.relationship('Title', foreign_keys=[active_title_3_id])
 
     def get_all_games(self):
         """このプレイヤーが参加した全ゲームを取得"""
@@ -97,7 +106,8 @@ class Player(db.Model):
                 'min_raw_score': 0,
                 'max_consecutive_top2': 0,
                 'max_consecutive_top1': 0,
-                'max_consecutive_last': 0
+                'max_consecutive_last': 0,
+                'top1_count': 0
             }
 
         import statistics
@@ -163,7 +173,8 @@ class Player(db.Model):
             'min_raw_score': min_raw_score,
             'max_consecutive_top2': max_consecutive_top2,
             'max_consecutive_top1': max_consecutive_top1,
-            'max_consecutive_last': max_consecutive_last
+            'max_consecutive_last': max_consecutive_last,
+            'top1_count': rank_1_count
         }
 
     def _get_max_consecutive(self, ranks, target_ranks):
@@ -204,3 +215,74 @@ class Game(db.Model):
     uma2 = db.Column(db.Integer, default=0)
     uma3 = db.Column(db.Integer, default=0)
     uma4 = db.Column(db.Integer, default=0)
+
+# 称号モデル
+class Title(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)  # 称号名（内部用）
+    badge_filename = db.Column(db.String(255), nullable=False)    # バッチ画像ファイル名
+    
+    # 取得条件（複数条件可）
+    required_total_games = db.Column(db.Integer, default=0)       # 最小対戦数
+    required_avg_rank = db.Column(db.Float, default=4.1)          # 最大平均着順（小さいほど良い）
+    required_win_count = db.Column(db.Integer, default=0)         # 最小1位回数
+    required_last_avoidance_rate = db.Column(db.Float, default=0)  # 最小ラス回避率
+    required_highest_rank_1_rate = db.Column(db.Boolean, default=False)  # 最高トップ率条件
+    required_highest_last_avoidance_rate = db.Column(db.Boolean, default=False)  # 最高ラス回避率条件
+    required_highest_raw_score_std_dev = db.Column(db.Boolean, default=False)  # 最高標準偏差条件
+    
+    def __repr__(self):
+        return f'<Title {self.name}>'
+    
+    def check_unlocked(self, player):
+        """プレイヤーがこの称号の取得条件を満たしているか確認"""
+        stats = player.calculate_stats()
+
+        def has_unique_highest(metric_name):
+            all_players = Player.query.all()
+            ranked_players = []
+
+            for other_player in all_players:
+                other_stats = other_player.calculate_stats()
+                if other_stats['total_games'] > 0:
+                    ranked_players.append((other_player.id, other_stats.get(metric_name, 0)))
+
+            if stats['total_games'] == 0 or not ranked_players:
+                return False
+
+            max_value = max(value for _, value in ranked_players)
+            leaders = [player_id for player_id, value in ranked_players if value == max_value]
+            return player.id in leaders and len(leaders) == 1 and stats.get(metric_name, 0) == max_value
+        
+        # 対戦数条件
+        if stats['total_games'] < self.required_total_games:
+            return False
+        
+        # 平均着順条件
+        if stats['total_games'] > 0 and stats['avg_rank'] > self.required_avg_rank:
+            return False
+        
+        # 1位回数条件
+        if stats.get('top1_count', 0) < self.required_win_count:
+            return False
+        
+        # ラス回避率条件
+        if stats['total_games'] > 0 and stats['last_avoidance_rate'] < self.required_last_avoidance_rate:
+            return False
+        
+        # 最高トップ率条件（全プレイヤーを比較）
+        if self.required_highest_rank_1_rate:
+            if not has_unique_highest('rank_1_rate'):
+                return False
+
+        # 最高ラス回避率条件（全プレイヤーを比較）
+        if self.required_highest_last_avoidance_rate:
+            if not has_unique_highest('last_avoidance_rate'):
+                return False
+
+        # 最高標準偏差条件（全プレイヤーを比較）
+        if self.required_highest_raw_score_std_dev:
+            if not has_unique_highest('raw_score_std_dev'):
+                return False
+        
+        return True

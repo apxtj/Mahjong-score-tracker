@@ -20,6 +20,63 @@
     </div>
   </div>
 
+  <!-- 称号スロット -->
+  <div class="row mb-5">
+    <div class="col-md-12">
+      <div class="card bg-light">
+        <div class="card-body">
+          <h5 class="card-title mb-4">🏆 装備中の称号</h5>
+          <div class="d-flex justify-content-around" style="gap: 20px;">
+            <!-- スロット1 -->
+            <div class="title-slot-container" onclick="openTitleModal(1)">
+              {% if player.active_title_1 %}
+                <img 
+                  src="{{ url_for('static', filename='title_badges/' + player.active_title_1.badge_filename) }}" 
+                  class="title-badge" 
+                  alt="{{ player.active_title_1.name }}"
+                  title="{{ player.active_title_1.name }}"
+                >
+              {% else %}
+                <div class="title-badge-empty"></div>
+              {% endif %}
+              <small class="d-block text-center mt-2">スロット1</small>
+            </div>
+            
+            <!-- スロット2 -->
+            <div class="title-slot-container" onclick="openTitleModal(2)">
+              {% if player.active_title_2 %}
+                <img 
+                  src="{{ url_for('static', filename='title_badges/' + player.active_title_2.badge_filename) }}" 
+                  class="title-badge" 
+                  alt="{{ player.active_title_2.name }}"
+                  title="{{ player.active_title_2.name }}"
+                >
+              {% else %}
+                <div class="title-badge-empty"></div>
+              {% endif %}
+              <small class="d-block text-center mt-2">スロット2</small>
+            </div>
+            
+            <!-- スロット3 -->
+            <div class="title-slot-container" onclick="openTitleModal(3)">
+              {% if player.active_title_3 %}
+                <img 
+                  src="{{ url_for('static', filename='title_badges/' + player.active_title_3.badge_filename) }}" 
+                  class="title-badge" 
+                  alt="{{ player.active_title_3.name }}"
+                  title="{{ player.active_title_3.name }}"
+                >
+              {% else %}
+                <div class="title-badge-empty"></div>
+              {% endif %}
+              <small class="d-block text-center mt-2">スロット3</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 安定度セクション -->
   <div class="row mb-5">
     <div class="col-md-12">
@@ -320,4 +377,162 @@
   });
 </script>
 
+<!-- 称号選択モーダル -->
+<div class="modal fade" id="titleModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">称号を選択</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="acquiredTitlesList" class="row g-2">
+          <!-- 取得可能な称号のリスト -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .title-slot-container {
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .title-slot-container:hover {
+    transform: scale(1.05);
+  }
+  .title-badge {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  }
+  .title-badge-empty {
+    width: 100px;
+    height: 100px;
+    background-color: #222;
+    border-radius: 50%;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .title-option {
+    cursor: pointer;
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .title-option:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+  }
+  .title-option img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto 8px;
+  }
+  .title-option .title-name {
+    font-size: 12px;
+    font-weight: bold;
+  }
+  .remove-title-btn {
+    padding: 8px 16px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+</style>
+
+<script>
+  let currentSlot = 1;
+  const playerId = {{ player.id }};
+  const acquiredTitles = {{ acquired_titles | tojson }};
+
+  function openTitleModal(slot) {
+    currentSlot = slot;
+    const titlesList = document.getElementById('acquiredTitlesList');
+    titlesList.innerHTML = '';
+
+    // 外すオプション
+    const removeOption = document.createElement('div');
+    removeOption.className = 'col-6';
+    removeOption.innerHTML = `
+      <button class="remove-title-btn" onclick="removeTitle(${slot})">
+        外す
+      </button>
+    `;
+    titlesList.appendChild(removeOption);
+
+    // 取得可能な称号をリスト表示
+    acquiredTitles.forEach(title => {
+      const option = document.createElement('div');
+      option.className = 'col-6';
+      option.innerHTML = `
+        <div class="title-option" onclick="selectTitle(${title.id}, ${slot})">
+          <img src="/static/title_badges/${title.badge_filename}" alt="${title.name}">
+          <div class="title-name">${title.name}</div>
+        </div>
+      `;
+      titlesList.appendChild(option);
+    });
+
+    const modal = new bootstrap.Modal(document.getElementById('titleModal'));
+    modal.show();
+  }
+
+  function selectTitle(titleId, slot) {
+    fetch(`/api/player/${playerId}/title/update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        slot: slot,
+        title_id: titleId
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      } else {
+        alert('エラーが発生しました。');
+      }
+    });
+  }
+
+  function removeTitle(slot) {
+    fetch(`/api/player/${playerId}/title/update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        slot: slot,
+        title_id: null
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      }
+    });
+  }
+</script>
+
 {% endblock %}
+
