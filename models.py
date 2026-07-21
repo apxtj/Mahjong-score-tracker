@@ -230,12 +230,15 @@ class Title(db.Model):
     required_highest_rank_1_rate = db.Column(db.Boolean, default=False)  # 最高トップ率条件
     required_highest_last_avoidance_rate = db.Column(db.Boolean, default=False)  # 最高ラス回避率条件
     required_highest_raw_score_std_dev = db.Column(db.Boolean, default=False)  # 最高標準偏差条件
+    required_max_consecutive_top1 = db.Column(db.Integer, default=0)  # 最大連続トップ数
+    required_max_consecutive_last = db.Column(db.Integer, default=0)  # 最大連続ラス数
+    is_permanent = db.Column(db.Boolean, default=False)  # 一度解除すれば以後使用可能
     
     def __repr__(self):
         return f'<Title {self.name}>'
     
-    def check_unlocked(self, player):
-        """プレイヤーがこの称号の取得条件を満たしているか確認"""
+    def meets_conditions(self, player):
+        """プレイヤーが現在の成績でこの称号の条件を満たしているか確認"""
         stats = player.calculate_stats()
 
         def has_unique_highest(metric_name):
@@ -265,6 +268,14 @@ class Title(db.Model):
         # 1位回数条件
         if stats.get('top1_count', 0) < self.required_win_count:
             return False
+
+        # 最大連続トップ数条件
+        if stats.get('max_consecutive_top1', 0) < (self.required_max_consecutive_top1 or 0):
+            return False
+
+        # 最大連続ラス数条件
+        if stats.get('max_consecutive_last', 0) < (self.required_max_consecutive_last or 0):
+            return False
         
         # ラス回避率条件
         if stats['total_games'] > 0 and stats['last_avoidance_rate'] < self.required_last_avoidance_rate:
@@ -286,3 +297,26 @@ class Title(db.Model):
                 return False
         
         return True
+
+    def check_unlocked(self, player):
+        """現在条件または永続解除履歴により称号を使用できるか確認"""
+        if self.is_permanent:
+            achievement = PlayerTitleAchievement.query.filter_by(
+                player_id=player.id,
+                title_id=self.id,
+            ).first()
+            if achievement:
+                return True
+
+        return self.meets_conditions(player)
+
+
+class PlayerTitleAchievement(db.Model):
+    """プレイヤーが永続称号を解除した履歴"""
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+    title_id = db.Column(db.Integer, db.ForeignKey('title.id'), nullable=False)
+    unlocked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint('player_id', 'title_id', name='uq_player_title_achievement'),
+    )

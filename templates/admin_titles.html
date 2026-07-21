@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}称号管理{% endblock %}
+
+{% macro field_value(name, default='') %}
+  {{ request.form.get(name, default) }}
+{% endmacro %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1">称号管理</h1>
+    <p class="text-muted mb-0">追加・編集・削除した内容はすぐにDBへ反映されます。</p>
+  </div>
+  {% if edit_title %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin_titles') }}">新規追加に戻る</a>
+  {% endif %}
+</div>
+
+<div class="alert alert-warning">
+  このページは現在ログイン認証で保護されていません。URLを知っている人は操作できます。
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error_message %}
+<div class="alert alert-danger">{{ error_message }}</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">{% if edit_title %}称号を編集{% else %}新しい称号を追加{% endif %}</h2>
+        <form method="post" enctype="multipart/form-data">
+          {% if edit_title %}
+          <input type="hidden" name="title_id" value="{{ edit_title.id }}">
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label" for="name">称号名</label>
+            <input class="form-control" id="name" name="name" maxlength="50" required
+                   value="{{ field_value('name', edit_title.name if edit_title else '') }}">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="badge">バッジ画像</label>
+            <input class="form-control" id="badge" name="badge" type="file"
+                   accept=".png,.jpg,.jpeg,.webp" {% if not edit_title %}required{% endif %}>
+            <div class="form-text">PNG、JPG、JPEG、WEBP。編集時は未選択なら既存画像を使用します。</div>
+            {% if edit_title %}
+            <div class="mt-2 small text-muted">現在: {{ edit_title.badge_filename }}</div>
+            {% endif %}
+          </div>
+
+          <div class="row g-2">
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_total_games">必要対戦数</label>
+              <input class="form-control" id="required_total_games" name="required_total_games" type="number" min="0" required
+                     value="{{ field_value('required_total_games', edit_title.required_total_games if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_avg_rank">必要平均着順以下</label>
+              <input class="form-control" id="required_avg_rank" name="required_avg_rank" type="number" min="0" max="4.1" step="0.01" required
+                     value="{{ field_value('required_avg_rank', edit_title.required_avg_rank if edit_title else 4.1) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_win_count">必要1位回数</label>
+              <input class="form-control" id="required_win_count" name="required_win_count" type="number" min="0" required
+                     value="{{ field_value('required_win_count', edit_title.required_win_count if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_last_avoidance_rate">必要ラス回避率(%)</label>
+              <input class="form-control" id="required_last_avoidance_rate" name="required_last_avoidance_rate" type="number" min="0" max="100" step="0.01" required
+                     value="{{ field_value('required_last_avoidance_rate', edit_title.required_last_avoidance_rate if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_max_consecutive_top1">必要最大連続トップ数</label>
+              <input class="form-control" id="required_max_consecutive_top1" name="required_max_consecutive_top1" type="number" min="0" required
+                     value="{{ field_value('required_max_consecutive_top1', edit_title.required_max_consecutive_top1 if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+              <label class="form-label" for="required_max_consecutive_last">必要最大連続ラス数</label>
+              <input class="form-control" id="required_max_consecutive_last" name="required_max_consecutive_last" type="number" min="0" required
+                     value="{{ field_value('required_max_consecutive_last', edit_title.required_max_consecutive_last if edit_title else 0) }}">
+            </div>
+          </div>
+
+          {% set permanent_checked = request.form.get('is_permanent') or (edit_title and edit_title.is_permanent) %}
+          <div class="form-check mb-3">
+            <input class="form-check-input" id="is_permanent" name="is_permanent" type="checkbox" {% if permanent_checked %}checked{% endif %}>
+            <label class="form-check-label" for="is_permanent">一度解除したら永続的に使用可能にする</label>
+            <div class="form-text">解除後に成績が変化しても、称号は取得済みのまま残ります。</div>
+          </div>
+
+          <fieldset class="mb-3">
+            <legend class="fs-6">全プレイヤー比較の条件</legend>
+            {% set top_rate_checked = request.form.get('required_highest_rank_1_rate') or (edit_title and edit_title.required_highest_rank_1_rate) %}
+            {% set avoidance_checked = request.form.get('required_highest_last_avoidance_rate') or (edit_title and edit_title.required_highest_last_avoidance_rate) %}
+            {% set volatility_checked = request.form.get('required_highest_raw_score_std_dev') or (edit_title and edit_title.required_highest_raw_score_std_dev) %}
+            <div class="form-check">
+              <input class="form-check-input" id="highest_rank_1_rate" name="required_highest_rank_1_rate" type="checkbox" {% if top_rate_checked %}checked{% endif %}>
+              <label class="form-check-label" for="highest_rank_1_rate">最高トップ率</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" id="highest_last_avoidance_rate" name="required_highest_last_avoidance_rate" type="checkbox" {% if avoidance_checked %}checked{% endif %}>
+              <label class="form-check-label" for="highest_last_avoidance_rate">最高ラス回避率</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" id="highest_raw_score_std_dev" name="required_highest_raw_score_std_dev" type="checkbox" {% if volatility_checked %}checked{% endif %}>
+              <label class="form-check-label" for="highest_raw_score_std_dev">最高素点標準偏差</label>
+            </div>
+          </fieldset>
+
+          <button class="btn btn-primary" type="submit">{% if edit_title %}更新する{% else %}追加する{% endif %}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">登録済みの称号</h2>
+        {% if titles %}
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th>画像</th>
+                <th>称号</th>
+                <th>主な条件</th>
+                <th class="text-end">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for title in titles %}
+              <tr>
+                <td><img src="{{ url_for('static', filename='title_badges/' + title.badge_filename) }}" alt="{{ title.name }}" width="56" height="56" style="object-fit: contain;"></td>
+                <td class="fw-bold">{{ title.name }}</td>
+                <td class="small text-muted">
+                  {{ title.required_total_games }}戦以上 / 平均{{ title.required_avg_rank }}以下<br>
+                  1位{{ title.required_win_count }}回以上 / ラス回避{{ title.required_last_avoidance_rate }}%以上
+                  {% if title.required_max_consecutive_top1 %}<br>連続トップ{{ title.required_max_consecutive_top1 }}回以上{% endif %}
+                  {% if title.required_max_consecutive_last %}<br>連続ラス{{ title.required_max_consecutive_last }}回以上{% endif %}
+                  {% if title.required_highest_rank_1_rate %}<br>最高トップ率{% endif %}
+                  {% if title.required_highest_last_avoidance_rate %}<br>最高ラス回避率{% endif %}
+                  {% if title.required_highest_raw_score_std_dev %}<br>最高標準偏差{% endif %}
+                  {% if title.is_permanent %}<br><span class="text-success">永続解除</span>{% endif %}
+                </td>
+                <td class="text-end text-nowrap">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_titles', edit=title.id) }}">編集</a>
+                  <form method="post" action="{{ url_for('delete_admin_title', title_id=title.id) }}" class="d-inline" onsubmit="return confirm('この称号を削除しますか？');">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">削除</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">称号はまだ登録されていません。</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

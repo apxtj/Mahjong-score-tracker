@@ -10,7 +10,9 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game, Title
+from models import db, User, Player, Game, Title, PlayerTitleAchievement
+from werkzeug.utils import secure_filename
+from uuid import uuid4
 
 import logging
 
@@ -176,6 +178,11 @@ def index():
             for idx, player_data in enumerate(sorted_players):
                 player = Player.query.get(player_data['id'])
                 player.total_score += final_scores[idx]
+            db.session.commit()
+
+            _record_permanent_achievements(
+                Player.query.filter(Player.id.in_([p['id'] for p in sorted_players])).all()
+            )
             db.session.commit()
 
             return redirect(url_for('results'))
@@ -536,6 +543,9 @@ def profile(player_id):
     stats['best_max_consecutive_top2'] = stats['total_games'] > 0 and stats['max_consecutive_top2'] == best_values.get('max_consecutive_top2')
     stats['best_max_consecutive_last'] = stats['total_games'] > 0 and stats['max_consecutive_last'] == best_values.get('max_consecutive_last')
 
+    # 永続称号は、条件を満たした時点で解除履歴を保存する
+    _record_permanent_achievements([player])
+
     # 装備中の称号の条件確認と自動削除
     for slot_attr, title_attr in [('active_title_1_id', 'active_title_1'), 
                                     ('active_title_2_id', 'active_title_2'), 
@@ -561,6 +571,18 @@ def profile(player_id):
             })
 
     return render_template("profile.html", player=player, stats=stats, acquired_titles=acquired_titles)
+
+
+def _record_permanent_achievements(players):
+    """現在の成績で条件を満たした永続称号を解除履歴へ記録する"""
+    permanent_titles = Title.query.filter_by(is_permanent=True).all()
+    for player in players:
+        for title in permanent_titles:
+            if title.meets_conditions(player) and not PlayerTitleAchievement.query.filter_by(
+                player_id=player.id,
+                title_id=title.id,
+            ).first():
+                db.session.add(PlayerTitleAchievement(player_id=player.id, title_id=title.id))
 
 
 @app.route("/api/player/<int:player_id>/title/update", methods=["POST"])
@@ -591,6 +613,162 @@ def update_player_title(player_id):
     
     db.session.commit()
     return jsonify({'success': True})
+
+
+TITLE_BADGE_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+
+
+def _save_title_badge(uploaded_file):
+    """称号バッジをstatic/title_badgesへ保存し、DB用ファイル名を返す"""
+    if not uploaded_file or not uploaded_file.filename:
+        return None
+
+    original_name = secure_filename(uploaded_file.filename)
+    if '.' not in original_name:
+        raise ValueError('画像ファイルの拡張子が必要です')
+
+    extension = original_name.rsplit('.', 1)[1].lower()
+    if extension not in TITLE_BADGE_ALLOWED_EXTENSIONS:
+        raise ValueError('対応している画像形式は PNG、JPG、JPEG、WEBP です')
+
+    filename = f'{uuid4().hex}.{extension}'
+    badge_directory = os.path.join(app.static_folder, 'title_badges')
+    os.makedirs(badge_directory, exist_ok=True)
+    uploaded_file.save(os.path.join(badge_directory, filename))
+    return filename
+
+
+def _title_form_values(form):
+    """管理画面のフォーム値をTitle用の辞書に変換する"""
+    name = form.get('name', '').strip()
+    if not name:
+        raise ValueError('称号名を入力してください')
+    if len(name) > 50:
+        raise ValueError('称号名は50文字以内で入力してください')
+
+    def integer_value(field_name, label):
+        value = form.get(field_name, '0').strip()
+        try:
+            parsed = int(value)
+        except ValueError as error:
+            raise ValueError(f'{label}は整数で入力してください') from error
+        if parsed < 0:
+            raise ValueError(f'{label}は0以上で入力してください')
+        return parsed
+
+    def float_value(field_name, label, maximum=None):
+        value = form.get(field_name, '0').strip()
+        try:
+            parsed = float(value)
+        except ValueError as error:
+            raise ValueError(f'{label}は数値で入力してください') from error
+        if parsed < 0 or (maximum is not None and parsed > maximum):
+            limit = f'0以上{maximum}以下' if maximum is not None else '0以上'
+            raise ValueError(f'{label}は{limit}で入力してください')
+        return parsed
+
+    return {
+        'name': name,
+        'required_total_games': integer_value('required_total_games', '必要対戦数'),
+        'required_avg_rank': float_value('required_avg_rank', '必要平均着順', 4.1),
+        'required_win_count': integer_value('required_win_count', '必要1位回数'),
+        'required_last_avoidance_rate': float_value(
+            'required_last_avoidance_rate', '必要ラス回避率', 100.0
+        ),
+        'required_max_consecutive_top1': integer_value(
+            'required_max_consecutive_top1', '必要最大連続トップ数'
+        ),
+        'required_max_consecutive_last': integer_value(
+            'required_max_consecutive_last', '必要最大連続ラス数'
+        ),
+        'required_highest_rank_1_rate': 'required_highest_rank_1_rate' in form,
+        'required_highest_last_avoidance_rate': 'required_highest_last_avoidance_rate' in form,
+        'required_highest_raw_score_std_dev': 'required_highest_raw_score_std_dev' in form,
+        'is_permanent': 'is_permanent' in form,
+    }
+
+
+@app.route('/admin/titles', methods=['GET', 'POST'])
+def admin_titles():
+    """称号の追加・編集を行う管理画面（認証なし、直接URLアクセス）"""
+    edit_title = None
+    if request.method == 'POST':
+        title_id = request.form.get('title_id', '').strip()
+        edit_title = Title.query.get(int(title_id)) if title_id else None
+        if title_id and not edit_title:
+            return render_template(
+                'admin_titles.html',
+                titles=Title.query.order_by(Title.id).all(),
+                edit_title=None,
+                error_message='編集対象の称号が見つかりません',
+                message=None,
+            ), 404
+        try:
+            title_values = _title_form_values(request.form)
+            duplicate = Title.query.filter_by(name=title_values['name']).first()
+            if duplicate and duplicate.id != (edit_title.id if edit_title else None):
+                raise ValueError('同じ名前の称号がすでに存在します')
+
+            badge_filename = _save_title_badge(request.files.get('badge'))
+            if not edit_title and not badge_filename:
+                raise ValueError('新規追加時はバッジ画像が必要です')
+
+            if edit_title:
+                for key, value in title_values.items():
+                    setattr(edit_title, key, value)
+                if badge_filename:
+                    edit_title.badge_filename = badge_filename
+                message = '称号を更新しました'
+            else:
+                db.session.add(Title(**title_values, badge_filename=badge_filename))
+                message = '称号を追加しました'
+
+            db.session.commit()
+            return redirect(url_for('admin_titles', message=message))
+        except (ValueError, TypeError) as error:
+            db.session.rollback()
+            error_message = str(error)
+        except Exception:
+            db.session.rollback()
+            logger.exception('Title administration failed')
+            error_message = '称号の保存に失敗しました'
+    else:
+        edit_id = request.args.get('edit', type=int)
+        edit_title = Title.query.get(edit_id) if edit_id else None
+        error_message = None
+
+    titles = Title.query.order_by(Title.id).all()
+    return render_template(
+        'admin_titles.html',
+        titles=titles,
+        edit_title=edit_title,
+        error_message=error_message,
+        message=request.args.get('message'),
+    )
+
+
+@app.route('/admin/titles/<int:title_id>/delete', methods=['POST'])
+def delete_admin_title(title_id):
+    """管理画面から称号を削除する（認証なし、直接URLアクセス）"""
+    title = Title.query.get_or_404(title_id)
+    PlayerTitleAchievement.query.filter_by(title_id=title.id).delete(
+        synchronize_session=False
+    )
+    for player in Player.query.filter(
+        (Player.active_title_1_id == title.id) |
+        (Player.active_title_2_id == title.id) |
+        (Player.active_title_3_id == title.id)
+    ).all():
+        if player.active_title_1_id == title.id:
+            player.active_title_1_id = None
+        if player.active_title_2_id == title.id:
+            player.active_title_2_id = None
+        if player.active_title_3_id == title.id:
+            player.active_title_3_id = None
+
+    db.session.delete(title)
+    db.session.commit()
+    return redirect(url_for('admin_titles', message='称号を削除しました'))
 
 
 @app.route("/delete_game/<int:game_id>", methods=["POST"])
