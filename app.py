@@ -553,7 +553,7 @@ def profile(player_id):
         title_id = getattr(player, slot_attr)
         if title_id:
             title = Title.query.get(title_id)
-            if title and not title.check_unlocked(player):
+            if title and not title.is_permanent and not title.check_unlocked(player):
                 # 条件を満たさなくなったので外す
                 setattr(player, slot_attr, None)
     
@@ -600,7 +600,7 @@ def update_player_title(player_id):
     # タイトルが指定されている場合、取得可能か確認
     if title_id:
         title = Title.query.get_or_404(title_id)
-        if not title.check_unlocked(player):
+        if not title.is_permanent and not title.check_unlocked(player):
             return jsonify({'error': 'Title not unlocked'}), 403
     
     # スロットを更新
@@ -646,14 +646,16 @@ def _title_form_values(form):
     if len(name) > 50:
         raise ValueError('称号名は50文字以内で入力してください')
 
-    def integer_value(field_name, label):
+    def integer_value(field_name, label, min_value=0):
         value = form.get(field_name, '0').strip()
         try:
             parsed = int(value)
         except ValueError as error:
             raise ValueError(f'{label}は整数で入力してください') from error
-        if parsed < 0:
-            raise ValueError(f'{label}は0以上で入力してください')
+        if parsed < min_value:
+            if min_value == 0:
+                raise ValueError(f'{label}は0以上で入力してください')
+            raise ValueError(f'{label}は{min_value}以上で入力してください')
         return parsed
 
     def float_value(field_name, label, maximum=None):
@@ -684,6 +686,9 @@ def _title_form_values(form):
         'required_highest_rank_1_rate': 'required_highest_rank_1_rate' in form,
         'required_highest_last_avoidance_rate': 'required_highest_last_avoidance_rate' in form,
         'required_highest_raw_score_std_dev': 'required_highest_raw_score_std_dev' in form,
+        'required_total_raw_score': integer_value('required_total_raw_score', '必要合計素点'),
+        'required_max_raw_score': integer_value('required_max_raw_score', '必要最大素点'),
+        'required_min_raw_score': integer_value('required_min_raw_score', '必要最低素点', min_value=-999999),
         'is_permanent': 'is_permanent' in form,
     }
 

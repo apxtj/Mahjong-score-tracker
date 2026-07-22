@@ -85,6 +85,21 @@
               <input class="form-control" id="required_max_consecutive_last" name="required_max_consecutive_last" type="number" min="0" required
                      value="{{ field_value('required_max_consecutive_last', edit_title.required_max_consecutive_last if edit_title else 0) }}">
             </div>
+            <div class="col-sm-6 mb-3">
+                <label class="form-label" for="required_total_raw_score">必要合計素点以上</label>
+                <input class="form-control" id="required_total_raw_score" name="required_total_raw_score" type="number"
+                        value="{{ field_value('required_total_raw_score', edit_title.required_total_raw_score if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+                <label class="form-label" for="required_max_raw_score">必要最大素点以上（1ゲーム）</label>
+                <input class="form-control" id="required_max_raw_score" name="required_max_raw_score" type="number"
+                        value="{{ field_value('required_max_raw_score', edit_title.required_max_raw_score if edit_title else 0) }}">
+            </div>
+            <div class="col-sm-6 mb-3">
+                <label class="form-label" for="required_min_raw_score">必要最低素点以下（1ゲーム）</label>
+                <input class="form-control" id="required_min_raw_score" name="required_min_raw_score" type="number"
+                        value="{{ field_value('required_min_raw_score', edit_title.required_min_raw_score if edit_title else 0) }}">
+            </div>
           </div>
 
           {% set permanent_checked = request.form.get('is_permanent') or (edit_title and edit_title.is_permanent) %}

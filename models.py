@@ -147,6 +147,9 @@ class Player(db.Model):
         # 平均素点
         avg_raw_score = sum(raw_scores) / total_games if total_games > 0 else 0.0
         
+        # 合計素点
+        total_raw_score = sum(raw_scores)
+        
         # 標準偏差
         raw_score_std_dev = statistics.stdev(raw_scores) if len(raw_scores) > 1 else 0.0
         
@@ -168,6 +171,7 @@ class Player(db.Model):
             'rank_4_rate': round(rank_4_rate, 2),
             'last_avoidance_rate': round(last_avoidance_rate, 2),
             'avg_raw_score': round(avg_raw_score, 2),
+            'total_raw_score': total_raw_score,
             'raw_score_std_dev': round(raw_score_std_dev, 2),
             'max_raw_score': max_raw_score,
             'min_raw_score': min_raw_score,
@@ -232,6 +236,9 @@ class Title(db.Model):
     required_highest_raw_score_std_dev = db.Column(db.Boolean, default=False)  # 最高標準偏差条件
     required_max_consecutive_top1 = db.Column(db.Integer, default=0)  # 最大連続トップ数
     required_max_consecutive_last = db.Column(db.Integer, default=0)  # 最大連続ラス数
+    required_total_raw_score = db.Column(db.Integer, default=0, nullable=False)
+    required_max_raw_score = db.Column(db.Integer, default=0, nullable=False)
+    required_min_raw_score = db.Column(db.Integer, default=0, nullable=False)
     is_permanent = db.Column(db.Boolean, default=False)  # 一度解除すれば以後使用可能
     
     def __repr__(self):
@@ -296,6 +303,21 @@ class Title(db.Model):
             if not has_unique_highest('raw_score_std_dev'):
                 return False
         
+        # 合計素点条件
+        if (self.required_total_raw_score or 0) > 0:
+            if stats.get("total_raw_score", 0) < (self.required_total_raw_score or 0):
+                return False
+
+        # 最大素点条件
+        if (self.required_max_raw_score or 0) > 0:
+            if stats.get("max_raw_score", 0) < (self.required_max_raw_score or 0):
+                return False
+
+        # 最低素点条件
+        if self.required_min_raw_score is not None and self.required_min_raw_score < 0:
+            if stats.get('min_raw_score', 0) > self.required_min_raw_score:
+                return False
+
         return True
 
     def check_unlocked(self, player):
