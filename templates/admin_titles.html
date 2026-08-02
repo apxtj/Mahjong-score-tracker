@@ -7,6 +7,81 @@
 {% endmacro %}
 
 {% block content %}
+<style>
+  .condition-details {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    background: #f8fafc;
+  }
+  .condition-summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #0d6efd;
+  }
+  .badge-summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #0d6efd;
+  }
+  .condition-body {
+    max-height: 240px;
+    overflow: auto;
+  }
+  .badge-body {
+    max-height: 180px;
+    overflow: auto;
+  }
+  .condition-list {
+    display: grid;
+    gap: 0.4rem;
+  }
+  .condition-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    background: #ffffff;
+    border: 1px solid #eef2f7;
+  }
+  .condition-label {
+    color: #334155;
+  }
+  .condition-value {
+    font-weight: 700;
+    color: #0f172a;
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 0.08rem 0.5rem;
+    white-space: nowrap;
+  }
+  .condition-chip {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .condition-on {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .condition-off {
+    background: #e5e7eb;
+    color: #4b5563;
+  }
+  .badge-value {
+    font-weight: 600;
+    color: #0f172a;
+    background: #f1f5f9;
+    border-radius: 8px;
+    padding: 0.2rem 0.45rem;
+    word-break: break-all;
+  }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h1 class="h3 mb-1">称号管理</h1>
@@ -18,7 +93,7 @@
 </div>
 
 <div class="alert alert-warning">
-  このページは現在ログイン認証で保護されていません。URLを知っている人は操作できます。
+  このページは管理用 Basic 認証で保護されています（ADMIN_PASSWORD 必須）。
 </div>
 
 {% if message %}
@@ -145,7 +220,8 @@
               <tr>
                 <th>画像</th>
                 <th>称号</th>
-                <th>主な条件</th>
+                <th>バッジ情報</th>
+                <th>条件</th>
                 <th class="text-end">操作</th>
               </tr>
             </thead>
@@ -155,14 +231,37 @@
                 <td><img src="{{ title.badge_image_url }}" alt="{{ title.name }}" width="56" height="56" style="object-fit: contain;"></td>
                 <td class="fw-bold">{{ title.name }}</td>
                 <td class="small text-muted">
-                  {{ title.required_total_games }}戦以上 / 平均{{ title.required_avg_rank }}以下<br>
-                  1位{{ title.required_win_count }}回以上 / ラス回避{{ title.required_last_avoidance_rate }}%以上
-                  {% if title.required_max_consecutive_top1 %}<br>連続トップ{{ title.required_max_consecutive_top1 }}回以上{% endif %}
-                  {% if title.required_max_consecutive_last %}<br>連続ラス{{ title.required_max_consecutive_last }}回以上{% endif %}
-                  {% if title.required_highest_rank_1_rate %}<br>最高トップ率{% endif %}
-                  {% if title.required_highest_last_avoidance_rate %}<br>最高ラス回避率{% endif %}
-                  {% if title.required_highest_raw_score_std_dev %}<br>最高標準偏差{% endif %}
-                  {% if title.is_permanent %}<br><span class="text-success">永続解除</span>{% endif %}
+                  <details class="condition-details">
+                    <summary class="badge-summary">バッジ情報を見る</summary>
+                    <div class="badge-body mt-2">
+                      <div class="condition-list">
+                        <div class="condition-item"><span class="condition-label">ファイル名</span><span class="badge-value">{{ title.badge_filename }}</span></div>
+                        <div class="condition-item"><span class="condition-label">URL</span><span class="badge-value">{{ title.badge_image_url }}</span></div>
+                      </div>
+                    </div>
+                  </details>
+                </td>
+                <td class="small text-muted">
+                  <details class="condition-details">
+                    <summary class="condition-summary">条件を見る</summary>
+                    <div class="condition-body mt-2">
+                      <div class="condition-list">
+                        <div class="condition-item"><span class="condition-label">必要対戦数</span><span class="condition-value">{{ title.required_total_games }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要平均着順以下</span><span class="condition-value">{{ title.required_avg_rank }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要1位回数</span><span class="condition-value">{{ title.required_win_count }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要ラス回避率</span><span class="condition-value">{{ title.required_last_avoidance_rate }}%</span></div>
+                        <div class="condition-item"><span class="condition-label">必要最大連続トップ数</span><span class="condition-value">{{ title.required_max_consecutive_top1 }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要最大連続ラス数</span><span class="condition-value">{{ title.required_max_consecutive_last }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要合計素点以上</span><span class="condition-value">{{ title.required_total_raw_score }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要最大素点以上</span><span class="condition-value">{{ title.required_max_raw_score }}</span></div>
+                        <div class="condition-item"><span class="condition-label">必要最低素点以下</span><span class="condition-value">{{ title.required_min_raw_score }}</span></div>
+                        <div class="condition-item"><span class="condition-label">最高トップ率</span><span class="condition-chip {{ 'condition-on' if title.required_highest_rank_1_rate else 'condition-off' }}">{{ 'ON' if title.required_highest_rank_1_rate else 'OFF' }}</span></div>
+                        <div class="condition-item"><span class="condition-label">最高ラス回避率</span><span class="condition-chip {{ 'condition-on' if title.required_highest_last_avoidance_rate else 'condition-off' }}">{{ 'ON' if title.required_highest_last_avoidance_rate else 'OFF' }}</span></div>
+                        <div class="condition-item"><span class="condition-label">最高標準偏差</span><span class="condition-chip {{ 'condition-on' if title.required_highest_raw_score_std_dev else 'condition-off' }}">{{ 'ON' if title.required_highest_raw_score_std_dev else 'OFF' }}</span></div>
+                        <div class="condition-item"><span class="condition-label">永続解除</span><span class="condition-chip {{ 'condition-on' if title.is_permanent else 'condition-off' }}">{{ 'ON' if title.is_permanent else 'OFF' }}</span></div>
+                      </div>
+                    </div>
+                  </details>
                 </td>
                 <td class="text-end text-nowrap">
                   <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_titles', edit=title.id) }}">編集</a>
