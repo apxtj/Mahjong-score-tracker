@@ -67,6 +67,27 @@ def login_required(f):
     logger.info("Authentication disabled: login_required is a no-op.")
     return f
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        admin_username = os.environ.get("ADMIN_USERNAME", "admin")
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+
+        if not admin_password:
+            logger.warning("ADMIN_PASSWORD is not configured. Refusing admin access.")
+            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+
+        auth = request.authorization
+        if not auth:
+            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+
+        if auth.username != admin_username or auth.password != admin_password:
+            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+
+        return f(*args, **kwargs)
+
+    return wrapper
+
 @app.route("/logout")
 def logout():
     session.pop("login_user_id", None)  # ログイン情報削除
@@ -721,8 +742,9 @@ def _title_form_values(form):
 
 
 @app.route('/admin/titles', methods=['GET', 'POST'])
+@admin_required
 def admin_titles():
-    """称号の追加・編集を行う管理画面（認証なし、直接URLアクセス）"""
+    """称号の追加・編集を行う管理画面"""
     edit_title = None
     if request.method == 'POST':
         title_id = request.form.get('title_id', '').strip()
@@ -780,8 +802,9 @@ def admin_titles():
 
 
 @app.route('/admin/titles/<int:title_id>/delete', methods=['POST'])
+@admin_required
 def delete_admin_title(title_id):
-    """管理画面から称号を削除する（認証なし、直接URLアクセス）"""
+    """管理画面から称号を削除する"""
     title = Title.query.get_or_404(title_id)
     PlayerTitleAchievement.query.filter_by(title_id=title.id).delete(
         synchronize_session=False

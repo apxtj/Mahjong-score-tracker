@@ -91,3 +91,21 @@ Supabase や PostgreSQL で新規に DB を作る場合は、この SQL をそ�
 - 称号の条件は `Title` モデルに保存され、プレイヤーの成績に応じて自動判定されます
 - 永続称号（`is_permanent`）は、一度解除したら履歴として残り続ける仕様です
 - 画像の保存先は、Cloudinary を使う場合は外部ストレージ、ローカルでは `static/title_badges/` です
+
+### 管理画面の認証
+
+`/admin/titles` は管理者向け画面なので、Basic Auth で保護されています。
+
+必要な環境変数:
+
+- `ADMIN_PASSWORD` : 管理画面に入るためのパスワード（必須）
+- `ADMIN_USERNAME` : 省略時は `admin` を使用
+
+例:
+
+```bash
+export ADMIN_PASSWORD="your-strong-password"
+export ADMIN_USERNAME="admin"
+```
+
+`ADMIN_PASSWORD` が設定されていない場合は、管理画面へのアクセスは `401 Unauthorized` になります。
