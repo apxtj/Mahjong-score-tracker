@@ -71,6 +71,20 @@ python app.py
 - `models.py` : Player / Game / Title / Achievement モデル
 - `templates/` : Flask テンプレート群
 - `static/` : CSS / JS / 画像など
+- `db/` : DB 関連の SQL 定義
+
+## DB 初期化SQL
+
+このリポジトリには、現在のアプリ仕様に合わせた初期スキーマを `db/schema.sql` に用意しています。  
+Supabase や PostgreSQL で新規に DB を作る場合は、この SQL をそのまま実行すればテーブル定義を作成できます。
+
+### 使い方
+
+1. Supabase の SQL Editor で `db/schema.sql` を開く
+2. 内容をそのまま実行する
+3. 必要に応じて `DATABASE_URL` を設定して Flask アプリを起動する
+
+> この SQL はテーブル定義のみを作成します。初期データの投入は行いません。
 
 ## 備考
 
