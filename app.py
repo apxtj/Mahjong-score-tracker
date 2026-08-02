@@ -674,7 +674,7 @@ def _title_form_values(form):
         raise ValueError('称号名は50文字以内で入力してください')
 
     def integer_value(field_name, label, min_value=0):
-        value = form.get(field_name, '0').strip()
+        value = (form.get(field_name, '') or '').strip() or '0'
         try:
             parsed = int(value)
         except ValueError as error:
@@ -685,8 +685,8 @@ def _title_form_values(form):
             raise ValueError(f'{label}は{min_value}以上で入力してください')
         return parsed
 
-    def float_value(field_name, label, maximum=None):
-        value = form.get(field_name, '0').strip()
+    def float_value(field_name, label, maximum=None, default_value=0.0):
+        value = (form.get(field_name, '') or '').strip() or str(default_value)
         try:
             parsed = float(value)
         except ValueError as error:
@@ -699,10 +699,10 @@ def _title_form_values(form):
     return {
         'name': name,
         'required_total_games': integer_value('required_total_games', '必要対戦数'),
-        'required_avg_rank': float_value('required_avg_rank', '必要平均着順', 4.1),
+        'required_avg_rank': float_value('required_avg_rank', '必要平均着順', 4.1, default_value=4.1),
         'required_win_count': integer_value('required_win_count', '必要1位回数'),
         'required_last_avoidance_rate': float_value(
-            'required_last_avoidance_rate', '必要ラス回避率', 100.0
+            'required_last_avoidance_rate', '必要ラス回避率', 100.0, default_value=0.0
         ),
         'required_max_consecutive_top1': integer_value(
             'required_max_consecutive_top1', '必要最大連続トップ数'
