@@ -1,2 +1,4 @@
 venv/
 archive/unused/
+static/title_badges/*
+!static/title_badges/.gitkeep
