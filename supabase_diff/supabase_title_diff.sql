@@ -20,12 +20,18 @@ CREATE TABLE IF NOT EXISTS public.title (
     required_highest_raw_score_std_dev boolean DEFAULT false,
     required_max_consecutive_top1 integer DEFAULT 0,
     required_max_consecutive_last integer DEFAULT 0,
+    required_total_raw_score integer NOT NULL DEFAULT 0,
+    required_max_raw_score integer NOT NULL DEFAULT 0,
+    required_min_raw_score integer NOT NULL DEFAULT 0,
     is_permanent boolean DEFAULT false
 );
 
 ALTER TABLE public.title
     ADD COLUMN IF NOT EXISTS required_max_consecutive_top1 integer DEFAULT 0,
     ADD COLUMN IF NOT EXISTS required_max_consecutive_last integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS required_total_raw_score integer NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS required_max_raw_score integer NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS required_min_raw_score integer NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS is_permanent boolean DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS public.player_title_achievement (
@@ -53,6 +59,9 @@ INSERT INTO public.title (
     required_highest_raw_score_std_dev,
     required_max_consecutive_top1,
     required_max_consecutive_last,
+    required_total_raw_score,
+    required_max_raw_score,
+    required_min_raw_score,
     is_permanent
 )
 VALUES
@@ -66,6 +75,9 @@ VALUES
         true,
         false,
         false,
+        0,
+        0,
+        0,
         0,
         0,
         false
@@ -82,6 +94,9 @@ VALUES
         false,
         0,
         0,
+        0,
+        0,
+        0,
         false
     ),
     (
@@ -94,6 +109,9 @@ VALUES
         false,
         false,
         true,
+        0,
+        0,
+        0,
         0,
         0,
         false
@@ -109,6 +127,9 @@ ON CONFLICT (name) DO UPDATE SET
     required_highest_raw_score_std_dev = EXCLUDED.required_highest_raw_score_std_dev,
     required_max_consecutive_top1 = EXCLUDED.required_max_consecutive_top1,
     required_max_consecutive_last = EXCLUDED.required_max_consecutive_last,
+    required_total_raw_score = EXCLUDED.required_total_raw_score,
+    required_max_raw_score = EXCLUDED.required_max_raw_score,
+    required_min_raw_score = EXCLUDED.required_min_raw_score,
     is_permanent = EXCLUDED.is_permanent;
 
 UPDATE public.player

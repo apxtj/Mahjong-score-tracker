@@ -14,6 +14,13 @@ from models import db, User, Player, Game, Title, PlayerTitleAchievement
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
+try:
+    import cloudinary
+    import cloudinary.uploader
+except ImportError:
+    cloudinary = None
+    cloudinary_uploader = None
+
 import logging
 
 app = Flask(__name__)
@@ -32,6 +39,10 @@ debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
 log_level = logging.DEBUG if debug_mode else logging.INFO
 logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
+
+# Cloudinary設定（Renderの環境変数 CLOUDINARY_URL がある場合のみ有効化）
+if cloudinary is not None and os.environ.get("CLOUDINARY_URL"):
+    cloudinary.config(cloudinary_url=os.environ.get("CLOUDINARY_URL"))
 
 # SQLiteデータベースの設定
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///mahjong.db")
@@ -567,7 +578,8 @@ def profile(player_id):
             acquired_titles.append({
                 'id': title.id,
                 'name': title.name,
-                'badge_filename': title.badge_filename
+                'badge_filename': title.badge_filename,
+                'badge_image_url': _badge_image_url_from_value(title.badge_filename),
             })
 
     return render_template("profile.html", player=player, stats=stats, acquired_titles=acquired_titles)
@@ -619,7 +631,7 @@ TITLE_BADGE_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 
 
 def _save_title_badge(uploaded_file):
-    """称号バッジをstatic/title_badgesへ保存し、DB用ファイル名を返す"""
+    """称号バッジをCloudinaryまたはstatic/title_badgesへ保存し、DB用URL/ファイル名を返す"""
     if not uploaded_file or not uploaded_file.filename:
         return None
 
@@ -632,6 +644,21 @@ def _save_title_badge(uploaded_file):
         raise ValueError('対応している画像形式は PNG、JPG、JPEG、WEBP です')
 
     filename = f'{uuid4().hex}.{extension}'
+
+    if _is_cloudinary_enabled():
+        try:
+            uploaded_file.stream.seek(0)
+            result = cloudinary.uploader.upload(
+                uploaded_file.stream,
+                folder='mahjong/title_badges',
+                public_id=filename.rsplit('.', 1)[0],
+                resource_type='image',
+            )
+            return result.get('secure_url') or result.get('url')
+        except Exception:
+            logger.exception('Cloudinary upload failed')
+            raise ValueError('Cloudinaryへのアップロードに失敗しました')
+
     badge_directory = os.path.join(app.static_folder, 'title_badges')
     os.makedirs(badge_directory, exist_ok=True)
     uploaded_file.save(os.path.join(badge_directory, filename))
@@ -784,6 +811,18 @@ def delete_game(game_id):
     db.session.commit()
     recalc_total_scores()
     return redirect(url_for('results'))
+
+
+def _is_cloudinary_enabled():
+    return cloudinary is not None and bool(os.environ.get("CLOUDINARY_URL"))
+
+
+def _badge_image_url_from_value(badge_value):
+    if not badge_value:
+        return ''
+    if str(badge_value).startswith(('http://', 'https://')):
+        return badge_value
+    return f"/static/title_badges/{badge_value}"
 
 
 if __name__ == "__main__":

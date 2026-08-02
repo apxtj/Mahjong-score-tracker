@@ -28,7 +28,7 @@
             <div class="title-slot-container" onclick="openTitleModal(1)">
               {% if player.active_title_1 %}
                 <img 
-                  src="{{ url_for('static', filename='title_badges/' + player.active_title_1.badge_filename) }}" 
+                  src="{{ player.active_title_1.badge_image_url }}" 
                   class="title-badge" 
                   alt="{{ player.active_title_1.name }}"
                   title="{{ player.active_title_1.name }}"
@@ -44,7 +44,7 @@
             <div class="title-slot-container" onclick="openTitleModal(2)">
               {% if player.active_title_2 %}
                 <img 
-                  src="{{ url_for('static', filename='title_badges/' + player.active_title_2.badge_filename) }}" 
+                  src="{{ player.active_title_2.badge_image_url }}" 
                   class="title-badge" 
                   alt="{{ player.active_title_2.name }}"
                   title="{{ player.active_title_2.name }}"
@@ -60,7 +60,7 @@
             <div class="title-slot-container" onclick="openTitleModal(3)">
               {% if player.active_title_3 %}
                 <img 
-                  src="{{ url_for('static', filename='title_badges/' + player.active_title_3.badge_filename) }}" 
+                  src="{{ player.active_title_3.badge_image_url }}" 
                   class="title-badge" 
                   alt="{{ player.active_title_3.name }}"
                   title="{{ player.active_title_3.name }}"
@@ -495,7 +495,7 @@
       option.className = 'col-6';
       option.innerHTML = `
         <div class="title-option" onclick="selectTitle(${title.id}, ${slot})">
-          <img src="/static/title_badges/${title.badge_filename}" alt="${title.name}">
+          <img src="${title.badge_image_url}" alt="${title.name}">
           <div class="title-name">${title.name}</div>
         </div>
       `;

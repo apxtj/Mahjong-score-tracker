@@ -50,7 +50,7 @@
                    accept=".png,.jpg,.jpeg,.webp" {% if not edit_title %}required{% endif %}>
             <div class="form-text">PNG、JPG、JPEG、WEBP。編集時は未選択なら既存画像を使用します。</div>
             {% if edit_title %}
-            <div class="mt-2 small text-muted">現在: {{ edit_title.badge_filename }}</div>
+            <div class="mt-2 small text-muted">現在: {{ edit_title.badge_image_url }}</div>
             {% endif %}
           </div>
 
@@ -152,7 +152,7 @@
             <tbody>
               {% for title in titles %}
               <tr>
-                <td><img src="{{ url_for('static', filename='title_badges/' + title.badge_filename) }}" alt="{{ title.name }}" width="56" height="56" style="object-fit: contain;"></td>
+                <td><img src="{{ title.badge_image_url }}" alt="{{ title.name }}" width="56" height="56" style="object-fit: contain;"></td>
                 <td class="fw-bold">{{ title.name }}</td>
                 <td class="small text-muted">
                   {{ title.required_total_games }}戦以上 / 平均{{ title.required_avg_rank }}以下<br>

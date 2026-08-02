@@ -224,7 +224,14 @@ class Game(db.Model):
 class Title(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False, unique=True)  # 称号名（内部用）
-    badge_filename = db.Column(db.String(255), nullable=False)    # バッチ画像ファイル名
+    badge_filename = db.Column(db.String(255), nullable=False)    # バッチ画像URLまたはファイル名
+
+    @property
+    def badge_image_url(self):
+        badge_value = self.badge_filename or ''
+        if badge_value.startswith(('http://', 'https://')):
+            return badge_value
+        return f"/static/title_badges/{badge_value}"
     
     # 取得条件（複数条件可）
     required_total_games = db.Column(db.Integer, default=0)       # 最小対戦数
