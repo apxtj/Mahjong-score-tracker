@@ -56,6 +56,7 @@
       <tr>
         <th>ゲーム日</th>
         <th>ゲーム数</th>
+        <th>写真</th>
         {% for player in players %}
           <th><a href="{{ url_for('profile', player_id=player.id) }}" class="player-profile-link">{{ player.name }}</a></th>
         {% endfor %}
@@ -68,6 +69,15 @@
           <tr>
             <td>{{ row.date }}</td>
             <td>{{ row.game_num }}</td>
+            <td>
+              {% if row.photo_url %}
+                <a href="{{ row.photo_url }}" target="_blank" rel="noopener noreferrer">
+                  <img src="{{ row.photo_url }}" alt="ゲーム写真" class="game-photo-thumbnail">
+                </a>
+              {% else %}
+                <span class="text-muted">なし</span>
+              {% endif %}
+            </td>
             {% for player in players %}
               {% set info = row.scores.get(player.name) %}
               <td class="{% if info %}{% if info.rank == 1 %}top-player{% elif info.rank == 4 %}last-player{% endif %}{% endif %}">
@@ -102,7 +112,7 @@
           </tr>
         {% elif row.type == "summary" %}
           <tr class="table-info">
-            <td colspan="2">
+            <td colspan="3">
               <strong>{{ row.date }} 合計</strong>
               <button class="btn btn-sm btn-outline-info payment-calc-btn" data-key="date_{{ loop.index0 }}">
                💳 
@@ -123,7 +133,7 @@
         {% endif %}
       {% endfor %}
       <tr class="table-warning">
-        <td colspan="2">
+        <td colspan="3">
           <strong>全対象期間 合計</strong>
           {% if filter_dates|length > 0 %}
             <span class="text-muted">({{ filter_dates|first }} ～ {{ filter_dates|last }})</span>
@@ -725,6 +735,17 @@
 
   .player-profile-link:hover .score-value {
     font-weight: 600;
+  }
+
+  .game-photo-thumbnail {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    display: block;
+    margin: 0 auto;
   }
 </style>
 

@@ -219,6 +219,18 @@ class Game(db.Model):
     uma2 = db.Column(db.Integer, default=0)
     uma3 = db.Column(db.Integer, default=0)
     uma4 = db.Column(db.Integer, default=0)
+    photo_url = db.Column(db.String(255), nullable=True)  # 互換用（旧実装）。新実装では GamePhoto を使用
+    photo = db.relationship('GamePhoto', uselist=False, back_populates='game', cascade='all, delete-orphan')
+
+
+class GamePhoto(db.Model):
+    __tablename__ = 'game_photo'
+    id = db.Column(db.Integer, primary_key=True)
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False, unique=True)
+    image_url = db.Column(db.String(500), nullable=False)
+    public_id = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    game = db.relationship('Game', back_populates='photo')
 
 # 称号モデル
 class Title(db.Model):
@@ -251,18 +263,23 @@ class Title(db.Model):
     def __repr__(self):
         return f'<Title {self.name}>'
     
-    def meets_conditions(self, player):
+    def meets_conditions(self, player, all_player_stats=None):
         """プレイヤーが現在の成績でこの称号の条件を満たしているか確認"""
-        stats = player.calculate_stats()
+        if all_player_stats is None:
+            all_players = Player.query.order_by(Player.id).all()
+            all_player_stats = {p.id: p.calculate_stats() for p in all_players}
+
+        stats = all_player_stats.get(player.id)
+        if stats is None:
+            stats = player.calculate_stats()
+            all_player_stats[player.id] = stats
 
         def has_unique_highest(metric_name):
-            all_players = Player.query.all()
             ranked_players = []
 
-            for other_player in all_players:
-                other_stats = other_player.calculate_stats()
-                if other_stats['total_games'] > 0:
-                    ranked_players.append((other_player.id, other_stats.get(metric_name, 0)))
+            for other_player_id, other_stats in all_player_stats.items():
+                if other_stats.get('total_games', 0) > 0:
+                    ranked_players.append((other_player_id, other_stats.get(metric_name, 0)))
 
             if stats['total_games'] == 0 or not ranked_players:
                 return False

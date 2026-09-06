@@ -13,6 +13,14 @@
           <span class="top-player-medal" title="メンバー中トップ成績">🥇</span>
         {% endif %}
       </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        {% if navigation.prev_player %}
+          <a href="{{ url_for('profile', player_id=navigation.prev_player.id) }}" class="btn btn-outline-secondary btn-sm">← 前のメンバー</a>
+        {% endif %}
+        {% if navigation.next_player %}
+          <a href="{{ url_for('profile', player_id=navigation.next_player.id) }}" class="btn btn-outline-primary btn-sm">次のメンバー →</a>
+        {% endif %}
+      </div>
       <p class="text-muted fs-5">総対戦数: <strong>{{ stats.total_games }}</strong> ゲーム</p>
     </div>
   </div>

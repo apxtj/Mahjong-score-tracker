@@ -10,7 +10,7 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game, Title, PlayerTitleAchievement
+from models import db, User, Player, Game, GamePhoto, Title, PlayerTitleAchievement
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
@@ -126,6 +126,9 @@ def index():
 
     if request.method == "POST":
         try:
+            uploaded_photo = request.files.get("photo")
+            photo_url = save_uploaded_game_photo(uploaded_photo) if uploaded_photo else None
+
             # フォームデータの取得
             form_data = {
                 "player1_id": request.form.get("player1_id", ""),
@@ -201,10 +204,14 @@ def index():
                 uma1=uma_values[0],
                 uma2=uma_values[1],
                 uma3=uma_values[2],
-                uma4=uma_values[3]
+                uma4=uma_values[3],
             )
             db.session.add(new_game)
             db.session.commit()
+
+            if photo_url:
+                db.session.add(GamePhoto(game_id=new_game.id, image_url=photo_url))
+                db.session.commit()
 
             # 各プレイヤーのトータルスコアを加算
             for idx, player_data in enumerate(sorted_players):
@@ -313,11 +320,13 @@ def results():
                 if not target_score or str(target_score["rank"]) != filter_rank:
                     continue  # スキップ
 
+            game_photo = GamePhoto.query.filter_by(game_id=game.id).first()
             table_data.append({
                 "type": "game",
                 "date": date,
                 "game_num": idx,
                 "game_id": game.id,
+                "photo_url": game_photo.image_url if game_photo else None,
                 "scores": score_dict
             })
 
@@ -540,6 +549,39 @@ def calculate_payment_route():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+def build_player_navigation(players, current_player_id):
+    """プロフィールの前後ナビゲーション用に並び順を返す"""
+    ordered_players = list(players)
+    current_index = next((idx for idx, player in enumerate(ordered_players) if player.id == current_player_id), None)
+    if current_index is None:
+        return {'prev_player': None, 'next_player': None}
+
+    prev_player = ordered_players[current_index - 1] if current_index > 0 else None
+    next_player = ordered_players[current_index + 1] if current_index < len(ordered_players) - 1 else None
+    return {'prev_player': prev_player, 'next_player': next_player}
+
+
+def get_unlocked_title_ids(player, players=None, player_stats=None):
+    """称号の解除済み一覧を、統計計算を再利用して高速に返す"""
+    if players is None:
+        players = Player.query.order_by(Player.id).all()
+
+    if player_stats is None:
+        player_stats = {p.id: p.calculate_stats() for p in players}
+
+    unlocked_title_ids = set()
+    for title in Title.query.order_by(Title.id).all():
+        if title.is_permanent:
+            achievement = PlayerTitleAchievement.query.filter_by(player_id=player.id, title_id=title.id).first()
+            if achievement:
+                unlocked_title_ids.add(title.id)
+            continue
+        if title.meets_conditions(player, all_player_stats=player_stats):
+            unlocked_title_ids.add(title.id)
+
+    return unlocked_title_ids
+
+
 @app.route("/profile/<int:player_id>")
 @login_required
 def profile(player_id):
@@ -548,6 +590,7 @@ def profile(player_id):
     # 全メンバーのプロフィール指標を比較して、各指標のトップを判定
     players = Player.query.order_by(Player.id).all()
     player_stats = {p.id: p.calculate_stats() for p in players}
+    navigation = build_player_navigation(players, player.id)
 
     # ゲーム未参加プレイヤーは比較対象外
     valid_stats = [s for s in player_stats.values() if s['total_games'] > 0]
@@ -574,6 +617,7 @@ def profile(player_id):
     stats['best_max_consecutive_top1'] = stats['total_games'] > 0 and stats['max_consecutive_top1'] == best_values.get('max_consecutive_top1')
     stats['best_max_consecutive_top2'] = stats['total_games'] > 0 and stats['max_consecutive_top2'] == best_values.get('max_consecutive_top2')
     stats['best_max_consecutive_last'] = stats['total_games'] > 0 and stats['max_consecutive_last'] == best_values.get('max_consecutive_last')
+    is_top_player = stats['best_avg_rank']
 
     # 永続称号は、条件を満たした時点で解除履歴を保存する
     _record_permanent_achievements([player])
@@ -588,14 +632,13 @@ def profile(player_id):
             if title and not title.is_permanent and not title.check_unlocked(player):
                 # 条件を満たさなくなったので外す
                 setattr(player, slot_attr, None)
-    
+
     db.session.commit()
 
-    # 取得可能な称号を計算
+    acquired_title_ids = get_unlocked_title_ids(player, players=players, player_stats=player_stats)
     acquired_titles = []
-    all_titles = Title.query.all()
-    for title in all_titles:
-        if title.check_unlocked(player):
+    for title in Title.query.order_by(Title.id).all():
+        if title.id in acquired_title_ids:
             acquired_titles.append({
                 'id': title.id,
                 'name': title.name,
@@ -603,7 +646,14 @@ def profile(player_id):
                 'badge_image_url': _badge_image_url_from_value(title.badge_filename),
             })
 
-    return render_template("profile.html", player=player, stats=stats, acquired_titles=acquired_titles)
+    return render_template(
+        "profile.html",
+        player=player,
+        stats=stats,
+        acquired_titles=acquired_titles,
+        navigation=navigation,
+        is_top_player=is_top_player,
+    )
 
 
 def _record_permanent_achievements(players):
@@ -846,6 +896,42 @@ def _badge_image_url_from_value(badge_value):
     if str(badge_value).startswith(('http://', 'https://')):
         return badge_value
     return f"/static/title_badges/{badge_value}"
+
+
+def save_uploaded_game_photo(uploaded_file):
+    """ゲームごとの写真を保存し、公開URLを返す"""
+    if not uploaded_file or not uploaded_file.filename:
+        return None
+
+    original_name = secure_filename(uploaded_file.filename)
+    if '.' not in original_name:
+        raise ValueError('画像ファイルの拡張子が必要です')
+
+    extension = original_name.rsplit('.', 1)[1].lower()
+    if extension not in {'png', 'jpg', 'jpeg', 'webp'}:
+        raise ValueError('対応している画像形式は PNG、JPG、JPEG、WEBP です')
+
+    filename = f'{uuid4().hex}.{extension}'
+
+    if _is_cloudinary_enabled():
+        try:
+            uploaded_file.stream.seek(0)
+            result = cloudinary.uploader.upload(
+                uploaded_file.stream,
+                folder='mahjong/game_photos',
+                public_id=filename.rsplit('.', 1)[0],
+                resource_type='image',
+            )
+            return result.get('secure_url') or result.get('url')
+        except Exception:
+            logger.exception('Game photo upload failed')
+            raise ValueError('写真のアップロードに失敗しました')
+
+    photo_directory = os.path.join(app.static_folder, 'game_photos')
+    os.makedirs(photo_directory, exist_ok=True)
+    uploaded_file.stream.seek(0)
+    uploaded_file.save(os.path.join(photo_directory, filename))
+    return f"/static/game_photos/{filename}"
 
 
 if __name__ == "__main__":
