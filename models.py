@@ -219,18 +219,6 @@ class Game(db.Model):
     uma2 = db.Column(db.Integer, default=0)
     uma3 = db.Column(db.Integer, default=0)
     uma4 = db.Column(db.Integer, default=0)
-    photo_url = db.Column(db.String(255), nullable=True)  # 互換用（旧実装）。新実装では GamePhoto を使用
-    photo = db.relationship('GamePhoto', uselist=False, back_populates='game', cascade='all, delete-orphan')
-
-
-class GamePhoto(db.Model):
-    __tablename__ = 'game_photo'
-    id = db.Column(db.Integer, primary_key=True)
-    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False, unique=True)
-    image_url = db.Column(db.String(500), nullable=False)
-    public_id = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    game = db.relationship('Game', back_populates='photo')
 
 # 称号モデル
 class Title(db.Model):
@@ -269,20 +257,6 @@ class Title(db.Model):
             all_players = Player.query.order_by(Player.id).all()
             all_player_stats = {p.id: p.calculate_stats() for p in all_players}
 
-        # 既存DBのNULL値に備え、未設定の条件はデフォルト値に補正する
-        required_total_games = self.required_total_games if self.required_total_games is not None else 0
-        required_avg_rank = self.required_avg_rank if self.required_avg_rank is not None else 4.1
-        required_win_count = self.required_win_count if self.required_win_count is not None else 0
-        required_last_avoidance_rate = self.required_last_avoidance_rate if self.required_last_avoidance_rate is not None else 0.0
-        required_highest_rank_1_rate = bool(self.required_highest_rank_1_rate) if self.required_highest_rank_1_rate is not None else False
-        required_highest_last_avoidance_rate = bool(self.required_highest_last_avoidance_rate) if self.required_highest_last_avoidance_rate is not None else False
-        required_highest_raw_score_std_dev = bool(self.required_highest_raw_score_std_dev) if self.required_highest_raw_score_std_dev is not None else False
-        required_max_consecutive_top1 = self.required_max_consecutive_top1 if self.required_max_consecutive_top1 is not None else 0
-        required_max_consecutive_last = self.required_max_consecutive_last if self.required_max_consecutive_last is not None else 0
-        required_total_raw_score = self.required_total_raw_score if self.required_total_raw_score is not None else 0
-        required_max_raw_score = self.required_max_raw_score if self.required_max_raw_score is not None else 0
-        required_min_raw_score = self.required_min_raw_score if self.required_min_raw_score is not None else 0
-
         stats = all_player_stats.get(player.id)
         if stats is None:
             stats = player.calculate_stats()
@@ -303,57 +277,57 @@ class Title(db.Model):
             return player.id in leaders and len(leaders) == 1 and stats.get(metric_name, 0) == max_value
         
         # 対戦数条件
-        if stats['total_games'] < required_total_games:
+        if stats['total_games'] < self.required_total_games:
             return False
         
         # 平均着順条件
-        if stats['total_games'] > 0 and stats['avg_rank'] > required_avg_rank:
+        if stats['total_games'] > 0 and stats['avg_rank'] > self.required_avg_rank:
             return False
         
         # 1位回数条件
-        if stats.get('top1_count', 0) < required_win_count:
+        if stats.get('top1_count', 0) < self.required_win_count:
             return False
 
         # 最大連続トップ数条件
-        if stats.get('max_consecutive_top1', 0) < required_max_consecutive_top1:
+        if stats.get('max_consecutive_top1', 0) < (self.required_max_consecutive_top1 or 0):
             return False
 
         # 最大連続ラス数条件
-        if stats.get('max_consecutive_last', 0) < required_max_consecutive_last:
+        if stats.get('max_consecutive_last', 0) < (self.required_max_consecutive_last or 0):
             return False
         
         # ラス回避率条件
-        if stats['total_games'] > 0 and stats['last_avoidance_rate'] < required_last_avoidance_rate:
+        if stats['total_games'] > 0 and stats['last_avoidance_rate'] < self.required_last_avoidance_rate:
             return False
         
         # 最高トップ率条件（全プレイヤーを比較）
-        if required_highest_rank_1_rate:
+        if self.required_highest_rank_1_rate:
             if not has_unique_highest('rank_1_rate'):
                 return False
 
         # 最高ラス回避率条件（全プレイヤーを比較）
-        if required_highest_last_avoidance_rate:
+        if self.required_highest_last_avoidance_rate:
             if not has_unique_highest('last_avoidance_rate'):
                 return False
 
         # 最高標準偏差条件（全プレイヤーを比較）
-        if required_highest_raw_score_std_dev:
+        if self.required_highest_raw_score_std_dev:
             if not has_unique_highest('raw_score_std_dev'):
                 return False
         
         # 合計素点条件
-        if required_total_raw_score > 0:
-            if stats.get("total_raw_score", 0) < required_total_raw_score:
+        if (self.required_total_raw_score or 0) > 0:
+            if stats.get("total_raw_score", 0) < (self.required_total_raw_score or 0):
                 return False
 
         # 最大素点条件
-        if required_max_raw_score > 0:
-            if stats.get("max_raw_score", 0) < required_max_raw_score:
+        if (self.required_max_raw_score or 0) > 0:
+            if stats.get("max_raw_score", 0) < (self.required_max_raw_score or 0):
                 return False
 
         # 最低素点条件
-        if required_min_raw_score < 0:
-            if stats.get('min_raw_score', 0) > required_min_raw_score:
+        if self.required_min_raw_score is not None and self.required_min_raw_score < 0:
+            if stats.get('min_raw_score', 0) > self.required_min_raw_score:
                 return False
 
         return True

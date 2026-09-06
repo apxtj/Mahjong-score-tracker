@@ -1,6 +1,6 @@
 import unittest
 
-from app import app, db, Player, Title, Game, build_player_navigation, get_unlocked_title_ids, save_uploaded_game_photo
+from app import app, db, Player, Title, build_player_navigation, get_unlocked_title_ids
 
 
 class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
@@ -43,59 +43,6 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         unlocked = get_unlocked_title_ids(player)
 
         self.assertIn(title.id, unlocked)
-
-    def test_title_meets_conditions_handles_null_required_values(self):
-        player = Player(name='A')
-        db.session.add(player)
-        db.session.commit()
-
-        title = Title(
-            name='NULL条件タイトル',
-            badge_filename='badge.png',
-            required_total_games=None,
-            required_avg_rank=None,
-            required_win_count=None,
-            required_last_avoidance_rate=None,
-            required_highest_rank_1_rate=None,
-            required_highest_last_avoidance_rate=None,
-            required_highest_raw_score_std_dev=None,
-            required_max_consecutive_top1=None,
-            required_max_consecutive_last=None,
-            required_total_raw_score=None,
-            required_max_raw_score=None,
-            required_min_raw_score=None,
-        )
-        db.session.add(title)
-        db.session.commit()
-
-        self.assertTrue(title.meets_conditions(player))
-
-    def test_game_photo_table_is_created_when_missing(self):
-        from sqlalchemy import inspect
-
-        inspector = inspect(db.engine)
-        self.assertTrue(inspector.has_table('game_photo'))
-
-    def test_save_uploaded_game_photo_returns_relative_path(self):
-        player = Player(name='A')
-        db.session.add(player)
-        db.session.commit()
-
-        game = Game(player1_id=player.id, player2_id=player.id, player3_id=player.id, player4_id=player.id,
-                    score1=100000, score2=0, score3=0, score4=0)
-        db.session.add(game)
-        db.session.commit()
-
-        file_storage = type('UploadedFile', (), {
-            'filename': 'sample.png',
-            'stream': __import__('io').BytesIO(b'fake-image-bytes'),
-            'save': lambda self, path: None,
-        })()
-
-        saved_path = save_uploaded_game_photo(file_storage)
-
-        self.assertTrue(saved_path.startswith('/static/game_photos/'))
-        self.assertTrue(saved_path.endswith('.png'))
 
 
 if __name__ == '__main__':

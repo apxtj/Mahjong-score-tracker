@@ -10,7 +10,7 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game, GamePhoto, Title, PlayerTitleAchievement
+from models import db, User, Player, Game, Title, PlayerTitleAchievement
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
@@ -52,9 +52,6 @@ migrate = Migrate(app, db)
 
 from auth import bp as auth_bp
 app.register_blueprint(auth_bp)
-
-with app.app_context():
-    db.create_all()
 
 def login_required(f):
     # @wraps(f)
@@ -129,9 +126,6 @@ def index():
 
     if request.method == "POST":
         try:
-            uploaded_photo = request.files.get("photo")
-            photo_url = save_uploaded_game_photo(uploaded_photo) if uploaded_photo else None
-
             # フォームデータの取得
             form_data = {
                 "player1_id": request.form.get("player1_id", ""),
@@ -207,14 +201,10 @@ def index():
                 uma1=uma_values[0],
                 uma2=uma_values[1],
                 uma3=uma_values[2],
-                uma4=uma_values[3],
+                uma4=uma_values[3]
             )
             db.session.add(new_game)
             db.session.commit()
-
-            if photo_url:
-                db.session.add(GamePhoto(game_id=new_game.id, image_url=photo_url))
-                db.session.commit()
 
             # 各プレイヤーのトータルスコアを加算
             for idx, player_data in enumerate(sorted_players):
@@ -323,13 +313,11 @@ def results():
                 if not target_score or str(target_score["rank"]) != filter_rank:
                     continue  # スキップ
 
-            game_photo = GamePhoto.query.filter_by(game_id=game.id).first()
             table_data.append({
                 "type": "game",
                 "date": date,
                 "game_num": idx,
                 "game_id": game.id,
-                "photo_url": game_photo.image_url if game_photo else None,
                 "scores": score_dict
             })
 
@@ -899,42 +887,6 @@ def _badge_image_url_from_value(badge_value):
     if str(badge_value).startswith(('http://', 'https://')):
         return badge_value
     return f"/static/title_badges/{badge_value}"
-
-
-def save_uploaded_game_photo(uploaded_file):
-    """ゲームごとの写真を保存し、公開URLを返す"""
-    if not uploaded_file or not uploaded_file.filename:
-        return None
-
-    original_name = secure_filename(uploaded_file.filename)
-    if '.' not in original_name:
-        raise ValueError('画像ファイルの拡張子が必要です')
-
-    extension = original_name.rsplit('.', 1)[1].lower()
-    if extension not in {'png', 'jpg', 'jpeg', 'webp'}:
-        raise ValueError('対応している画像形式は PNG、JPG、JPEG、WEBP です')
-
-    filename = f'{uuid4().hex}.{extension}'
-
-    if _is_cloudinary_enabled():
-        try:
-            uploaded_file.stream.seek(0)
-            result = cloudinary.uploader.upload(
-                uploaded_file.stream,
-                folder='mahjong/game_photos',
-                public_id=filename.rsplit('.', 1)[0],
-                resource_type='image',
-            )
-            return result.get('secure_url') or result.get('url')
-        except Exception:
-            logger.exception('Game photo upload failed')
-            raise ValueError('写真のアップロードに失敗しました')
-
-    photo_directory = os.path.join(app.static_folder, 'game_photos')
-    os.makedirs(photo_directory, exist_ok=True)
-    uploaded_file.stream.seek(0)
-    uploaded_file.save(os.path.join(photo_directory, filename))
-    return f"/static/game_photos/{filename}"
 
 
 if __name__ == "__main__":
