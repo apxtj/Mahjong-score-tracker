@@ -53,6 +53,9 @@ migrate = Migrate(app, db)
 from auth import bp as auth_bp
 app.register_blueprint(auth_bp)
 
+with app.app_context():
+    db.create_all()
+
 def login_required(f):
     # @wraps(f)
     # def wrapper(*args, **kwargs):
