@@ -11,7 +11,7 @@
 
         <p id="score-total" class="text-muted mt-2">合計: 0 点</p>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             {% set fd = form_data or {} %}
 
             {% set winds = ["東家", "南家", "西家", "北家"] %}
@@ -52,6 +52,12 @@
                     <input type="text" name="uma" class="form-control" placeholder="例: 30000,10000,-10000,-30000"
                         value="{{ form_data.uma if form_data and form_data.uma is defined else '30000,10000,-10000,-30000' }}" required>
                     <small class="form-text text-muted">順位1位から4位までのウマ点数をカンマで区切って入力してください。</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="photo" class="form-label">ゲームの写真（任意）</label>
+                    <input type="file" name="photo" accept="image/*" class="form-control">
+                    <small class="form-text text-muted">選択しない場合は写真なしのまま保存されます。</small>
                 </div>
             </div>
             </div>

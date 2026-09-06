@@ -59,6 +59,7 @@
         {% for player in players %}
           <th><a href="{{ url_for('profile', player_id=player.id) }}" class="player-profile-link">{{ player.name }}</a></th>
         {% endfor %}
+        <th>写真</th>
         <th>操作</th>
       </tr>
     </thead>
@@ -95,6 +96,13 @@
               </td>
             {% endfor %}
             <td>
+              {% if row.photo and row.photo.image_url %}
+                <img src="{{ row.photo.image_url }}" alt="ゲーム写真" class="game-photo-thumb">
+              {% else %}
+                <span class="text-muted">なし</span>
+              {% endif %}
+            </td>
+            <td>
               <form action="{{ url_for('delete_game', game_id=row.game_id) }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
                 <button type="submit" class="btn btn-danger btn-sm">削除</button>
               </form>
@@ -119,6 +127,7 @@
               </td>
             {% endfor %}
             <td>—</td>
+            <td>—</td>
           </tr>
         {% endif %}
       {% endfor %}
@@ -142,6 +151,7 @@
             {% endif %}
           </td>
         {% endfor %}
+        <td>—</td>
         <td>—</td>
       </tr>
     </tbody>

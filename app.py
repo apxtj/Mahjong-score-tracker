@@ -10,7 +10,7 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game, Title, PlayerTitleAchievement
+from models import db, User, Player, Game, GamePhoto, Title, PlayerTitleAchievement
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
@@ -206,6 +206,21 @@ def index():
             db.session.add(new_game)
             db.session.commit()
 
+            uploaded_photo = request.files.get('photo')
+            photo_payload = _save_game_photo(uploaded_photo)
+            if photo_payload and photo_payload.get('image_url'):
+                existing_photo = GamePhoto.query.filter_by(game_id=new_game.id).first()
+                if existing_photo:
+                    existing_photo.image_url = photo_payload['image_url']
+                    existing_photo.public_id = photo_payload.get('public_id')
+                else:
+                    db.session.add(GamePhoto(
+                        game_id=new_game.id,
+                        image_url=photo_payload['image_url'],
+                        public_id=photo_payload.get('public_id'),
+                    ))
+                db.session.commit()
+
             # 各プレイヤーのトータルスコアを加算
             for idx, player_data in enumerate(sorted_players):
                 player = Player.query.get(player_data['id'])
@@ -237,10 +252,54 @@ def index():
 
     return render_template("index.html", players=players, error=error, form_data=form_data)
 
+def _save_game_photo(uploaded_file):
+    """ゲーム写真を保存し、表示用URLを返す。ファイル未指定時はNoneを返す。"""
+    if not uploaded_file or not uploaded_file.filename:
+        return None
+
+    original_name = secure_filename(uploaded_file.filename)
+    if '.' not in original_name:
+        return None
+
+    extension = original_name.rsplit('.', 1)[1].lower()
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'webp'}
+    if extension not in allowed_extensions:
+        return None
+
+    filename = f'{uuid4().hex}.{extension}'
+
+    if _is_cloudinary_enabled():
+        try:
+            uploaded_file.stream.seek(0)
+            result = cloudinary.uploader.upload(
+                uploaded_file.stream,
+                folder='mahjong/game_photos',
+                public_id=filename.rsplit('.', 1)[0],
+                resource_type='image',
+            )
+            return {
+                'image_url': result.get('secure_url') or result.get('url'),
+                'public_id': result.get('public_id'),
+            }
+        except Exception:
+            logger.exception('Cloudinary game photo upload failed')
+            return None
+
+    photo_directory = os.path.join(app.static_folder, 'game_photos')
+    os.makedirs(photo_directory, exist_ok=True)
+    uploaded_file.save(os.path.join(photo_directory, filename))
+    return {
+        'image_url': f"/static/game_photos/{filename}",
+        'public_id': None,
+    }
+
+
 @app.route("/results")
 @login_required
 def results():
     recalc_total_scores()
+
+    game_photos = {photo.game_id: photo for photo in GamePhoto.query.all()}
 
     # 複数日付取得
     raw_dates = request.args.getlist("date")  # 例 ["2025‑07‑09,2025‑11‑09"] または ["2025‑07‑09","2025‑11‑09"]
@@ -318,7 +377,8 @@ def results():
                 "date": date,
                 "game_num": idx,
                 "game_id": game.id,
-                "scores": score_dict
+                "scores": score_dict,
+                "photo": game_photos.get(game.id)
             })
 
         # ゲームが1件以上追加されていればその日の合計も表示

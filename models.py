@@ -220,6 +220,18 @@ class Game(db.Model):
     uma3 = db.Column(db.Integer, default=0)
     uma4 = db.Column(db.Integer, default=0)
 
+
+class GamePhoto(db.Model):
+    __tablename__ = 'game_photo'
+
+    id = db.Column(db.Integer, primary_key=True)
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), unique=True, nullable=False)
+    image_url = db.Column(db.Text, nullable=True)
+    public_id = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    game = db.relationship('Game', backref=db.backref('photo', uselist=False))
+
 # 称号モデル
 class Title(db.Model):
     id = db.Column(db.Integer, primary_key=True)
