@@ -2,20 +2,118 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>登録</title>
+<title>Passkey登録</title>
+<style>
+  :root {
+    --bg: #f4f7fb;
+    --panel: #ffffff;
+    --border: #dfe7f2;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --success-bg: #ecfdf5;
+    --success-text: #166534;
+    --danger-bg: #fef2f2;
+    --danger-text: #b91c1c;
+    --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: var(--bg);
+    font-family: sans-serif;
+    color: var(--text);
+  }
+  .container {
+    max-width: 640px;
+    margin: 0 auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 28px 24px;
+  }
+  h2 {
+    margin-top: 0;
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    margin: 0 0 18px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .user-banner {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+    font-weight: 600;
+  }
+  form {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 16px;
+  }
+  input {
+    width: 100%;
+    max-width: 320px;
+    padding: 0.8em 0.9em;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 1rem;
+    margin-bottom: 16px;
+  }
+  button {
+    border: none;
+    border-radius: 10px;
+    background: var(--primary);
+    color: white;
+    padding: 0.8em 1.1em;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  button:hover { background: var(--primary-dark); }
+  #error {
+    min-height: 24px;
+    margin-top: 16px;
+    color: var(--danger-text);
+    font-weight: 600;
+  }
+  .muted {
+    color: var(--muted);
+    margin-top: 16px;
+    line-height: 1.6;
+  }
+</style>
 </head>
 <body data-username="{{ username or '' }}" data-enrollment-mode="{{ 'true' if enrollment_mode else 'false' }}">
-<h2>ユーザー登録</h2>
-{% if enrollment_mode %}
-<p>{{ username }} の Passkey を登録します。</p>
-{% endif %}
-<form id="registerForm">
-  {% if not enrollment_mode %}
-  <input type="text" id="username" placeholder="ユーザー名" required>
+<div class="container">
+  <h2>Passkey登録</h2>
+  {% if enrollment_mode %}
+  <p class="user-banner">{{ username }} の Passkey を登録します。</p>
+  {% else %}
+  <p class="subtitle">この端末で使う Passkey を登録して、次回から簡単にログインできるようにします。</p>
   {% endif %}
-  <button type="submit">登録</button>
-</form>
-<div id="error"></div>
+
+  <form id="registerForm">
+    {% if not enrollment_mode %}
+    <label for="username"><strong>ユーザー名</strong></label>
+    <input type="text" id="username" placeholder="ユーザー名" required>
+    {% endif %}
+    <button type="submit">登録</button>
+  </form>
+
+  <div id="error"></div>
+  <p class="muted">端末の指紋・顔認証やセキュリティキーが要求されます。登録後はログイン画面へ戻ります。</p>
+</div>
 <script>
 async function base64ToArrayBuffer(base64) {
     const binary = atob(base64.replace(/_/g, '/').replace(/-/g, '+'));
@@ -56,14 +154,14 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
                 displayName: options.user.displayName
             },
             pubKeyCredParams: options.pubKeyCredParams,
-            authenticatorSelection: options.authenticatorSelection, // optional だけど推奨
-            attestation: options.attestation, // optional
-            timeout: options.timeout // optional
+            authenticatorSelection: options.authenticatorSelection,
+            attestation: options.attestation,
+            timeout: options.timeout
         };
 
         const cred = await navigator.credentials.create({ publicKey });
         const data = {
-            id: cred.id,                   // id は文字列のまま
+            id: cred.id,
             rawId: await arrayBufferToBase64(cred.rawId),
             attestationObject: await arrayBufferToBase64(cred.response.attestationObject),
             clientDataJSON: await arrayBufferToBase64(cred.response.clientDataJSON)
