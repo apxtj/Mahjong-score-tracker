@@ -69,6 +69,9 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
+        if session.get('login_user_id') and session.get('login_is_admin'):
+            return f(*args, **kwargs)
+
         admin_username = os.environ.get("ADMIN_USERNAME", "admin")
         admin_password = os.environ.get("ADMIN_PASSWORD")
 

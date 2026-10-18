@@ -68,6 +68,31 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertIn(b'alice', response.data)
         self.assertIn(b'bob', response.data)
 
+    def test_login_page_has_no_public_registration_link(self):
+        client = app.test_client()
+        response = client.get('/login')
+        html = response.data.decode('utf-8')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('新規ユーザー登録', html)
+        self.assertNotIn('/register', html)
+
+    def test_admin_titles_page_is_available_to_logged_in_admin(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['login_user_id'] = admin.id
+            sess['login_is_admin'] = True
+
+        response = client.get('/admin/titles')
+        html = response.data.decode('utf-8')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('称号', html)
+
     def test_public_registration_is_disabled_by_default(self):
         client = app.test_client()
 

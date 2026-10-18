@@ -213,7 +213,6 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         const result = await finishResp.json();
 
         if (result.status === "ok") {
-            alert("ログイン成功！");
             window.location.href = "/";
         } else {
             errorDiv.textContent = "ログイン失敗: " + (result.error || "不明なエラー");
