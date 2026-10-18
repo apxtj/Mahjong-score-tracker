@@ -1,6 +1,8 @@
+import os
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from app import app, db, Player, Title, User, build_player_navigation, get_unlocked_title_ids
 
@@ -116,6 +118,24 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'challenge', response.data)
         self.assertIn(b'rp', response.data)
+
+    def test_register_start_uses_request_host_for_rp_id_when_env_unset(self):
+        user = User(username='alice')
+        db.session.add(user)
+        db.session.commit()
+
+        client = app.test_client()
+        with patch.dict(os.environ, {'ALLOW_PUBLIC_REGISTRATION': 'True'}, clear=False):
+            os.environ.pop('RP_ID', None)
+            response = client.post(
+                '/register_start',
+                json={'username': 'alice'},
+                base_url='https://example.com'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload['rp']['id'], 'example.com')
 
     def test_admin_sees_user_management_link_after_login(self):
         admin = User(username='admin')

@@ -71,6 +71,27 @@ def _resolve_rp_id():
     return parsed.hostname or "localhost"
 
 
+def _resolve_request_rp_id(request_obj=None):
+    rp_id = os.environ.get("RP_ID")
+    if rp_id:
+        return rp_id
+
+    if request_obj is not None:
+        host = request_obj.host or "localhost"
+        return host.split(":", 1)[0] or "localhost"
+
+    return _resolve_rp_id()
+
+
+def _make_webauthn_server(request_obj=None, rp_id=None):
+    effective_rp_id = rp_id or _resolve_request_rp_id(request_obj)
+    rp = PublicKeyCredentialRpEntity(
+        id=effective_rp_id,
+        name=os.environ.get("RP_NAME", "Mahjong App"),
+    )
+    return Fido2Server(rp), effective_rp_id
+
+
 # RP (Relying Party) and origin should be configurable for production.
 # Set ORIGIN / APP_URL / RP_ID in the deployment environment; localhost is only for local development.
 RP_ID = _resolve_rp_id()
@@ -176,6 +197,10 @@ def login_start():
         logger.debug("=== login_start ===")
         logger.debug("Username: %s", username)
 
+        request_server, rp_id = _make_webauthn_server(request)
+        logger.debug("Using RP_ID for login: %s", rp_id)
+        session["auth_rp_id"] = rp_id
+
         user = User.query.filter_by(username=username).first()
         if not user:
             logger.debug("User not found")
@@ -196,7 +221,7 @@ def login_start():
         cred_data = AttestedCredentialData(credential.public_key)
 
         # FIDO2 サーバーで認証開始（チャレンジとオプションを生成）
-        options, state = server.authenticate_begin([cred_data])
+        options, state = request_server.authenticate_begin([cred_data])
 
         # 認証状態をセッションに保存（バイナリはセッションに入れない）
         session["auth_state"] = state
@@ -296,6 +321,8 @@ def login_finish():
             raise ValueError("Credential id not found in session")
         
         logger.debug("auth_credential_id from session: %d", auth_cred_id)
+
+        auth_server, _ = _make_webauthn_server(rp_id=session.get("auth_rp_id") or RP_ID)
         
         cred_record = Credential.query.get(auth_cred_id)
         if not cred_record:
@@ -329,7 +356,7 @@ def login_finish():
         logger.debug("About to call authenticate_complete")
 
         # FIDO2サーバーで認証結果を完了させる
-        credential = server.authenticate_complete(
+        credential = auth_server.authenticate_complete(
             auth_state,
             [cred_data],
             auth_response
@@ -345,6 +372,7 @@ def login_finish():
         session.pop("auth_state", None)
         session.pop("auth_user_id", None)
         session.pop("auth_credential_id", None)
+        session.pop("auth_rp_id", None)
         logger.debug("Authentication succeeded: login_user_id set to %d", user.id)
         
         return jsonify({"status": "ok"})
@@ -354,6 +382,7 @@ def login_finish():
         session.pop("auth_state", None)
         session.pop("auth_user_id", None)
         session.pop("auth_credential_id", None)
+        session.pop("auth_rp_id", None)
         session.pop("login_user_id", None)
         logger.debug("Session completely cleared on error")
         return jsonify({"error": "Login failed"}), 400
@@ -410,9 +439,13 @@ def register_start():
 
         session["register_username"] = username
 
+        register_server, rp_id = _make_webauthn_server(request)
+        logger.debug("Using RP_ID for registration: %s", rp_id)
+        session["register_rp_id"] = rp_id
+
         user_id_bytes = str(user.id if user else username).encode("utf-8") if user else username.encode("utf-8")
 
-        options, state = server.register_begin(
+        options, state = register_server.register_begin(
             user={
                 "id": user_id_bytes,
                 "name": username,
@@ -420,7 +453,6 @@ def register_start():
             },
             credentials=[],
             resident_key_requirement="required",
-            authenticator_attachment="platform",
             user_verification="preferred"
         )
 
@@ -477,7 +509,8 @@ def register_finish():
         logger.debug("=== register_finish start ===")
         logger.debug("Username: %s", username)
 
-        credential = server.register_complete(
+        register_server, _ = _make_webauthn_server(rp_id=session.get("register_rp_id") or RP_ID)
+        credential = register_server.register_complete(
             session["register_state"],
             {
                 "id": decoded_raw_id,
@@ -516,6 +549,7 @@ def register_finish():
 
         session.pop("register_state", None)
         session.pop("register_username", None)
+        session.pop("register_rp_id", None)
         session.pop("allow_admin_enrollment", None)
         session.pop("enrollment_token", None)
         if user.passkey_enrollment_token:
