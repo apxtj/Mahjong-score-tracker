@@ -59,7 +59,7 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn('/login', response.headers.get('Location', ''))
 
-    def test_login_page_lists_registered_users(self):
+    def test_login_page_does_not_list_registered_users(self):
         db.session.add_all([
             User(username='alice'),
             User(username='bob'),
@@ -70,8 +70,9 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         response = client.get('/login')
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'alice', response.data)
-        self.assertIn(b'bob', response.data)
+        self.assertNotIn(b'alice', response.data)
+        self.assertNotIn(b'bob', response.data)
+        self.assertIn('Passkey でログイン', response.data.decode('utf-8'))
 
     def test_login_page_has_no_public_registration_link(self):
         client = app.test_client()

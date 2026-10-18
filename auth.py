@@ -6,7 +6,7 @@ from uuid import uuid4
 from fido2.server import Fido2Server,AuthenticationResponse
 from fido2.webauthn import PublicKeyCredentialRequestOptions, AttestedCredentialData, CollectedClientData, AuthenticatorData, AuthenticatorAssertionResponse, AuthenticationResponse as AuthenticationResponseWA
 from fido2.utils import websafe_encode, websafe_decode
-from models import db, User, Credential
+from models import db, User, Credential, Player
 import os
 import traceback
 
@@ -100,14 +100,18 @@ ORIGIN = _resolve_origin()
 rp = PublicKeyCredentialRpEntity(id=RP_ID, name=os.environ.get("RP_NAME", "Mahjong App"))
 server = Fido2Server(rp)
 
+def _admin_needs_passkey_setup():
+    admin_user = User.query.filter_by(username=_get_default_admin_username()).first()
+    return admin_user is None or not admin_user.credentials
+
+
 @bp.route("/login")
 def login_page():
     ensure_default_admin_user()
-    users = User.query.order_by(User.username.asc()).all()
     return render_template(
         "login.html",
-        users=users,
         default_admin_username=_get_default_admin_username(),
+        admin_needs_setup=_admin_needs_passkey_setup(),
     )
 
 @bp.route("/admin/users", methods=["GET", "POST"])
@@ -138,10 +142,41 @@ def admin_users():
     return render_template(
         "admin_users.html",
         users=User.query.order_by(User.username.asc()).all(),
+        players=Player.query.order_by(Player.id).all(),
         error_message=error_message,
         message=request.args.get("message"),
         admin_username=admin_username,
     )
+
+@bp.route("/admin/users/<int:user_id>/player", methods=["POST"])
+def admin_link_user_player(user_id):
+    current_user_id = session.get("login_user_id")
+    if not current_user_id:
+        return redirect(url_for("auth.login_page"))
+
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.username != _get_default_admin_username():
+        return jsonify({"error": "Admin access required"}), 403
+
+    user = User.query.get_or_404(user_id)
+    player_id = request.form.get("player_id", type=int)
+
+    if player_id:
+        player = Player.query.get_or_404(player_id)
+        other = User.query.filter(User.player_id == player.id, User.id != user.id).first()
+        if other:
+            return redirect(url_for(
+                "auth.admin_users",
+                message=f"プレイヤー '{player.name}' はすでに '{other.username}' に紐付いています。",
+            ))
+        user.player_id = player.id
+        message = f"'{user.username}' をプレイヤー '{player.name}' に紐付けました。"
+    else:
+        user.player_id = None
+        message = f"'{user.username}' のプレイヤー紐付けを解除しました。"
+
+    db.session.commit()
+    return redirect(url_for("auth.admin_users", message=message))
 
 @bp.route("/admin/users/<int:user_id>/passkey", methods=["POST"])
 def admin_issue_passkey_registration(user_id):
@@ -187,204 +222,110 @@ def admin_delete_user(user_id):
     db.session.commit()
     return redirect(url_for("auth.admin_users", message=f"ユーザー '{user.username}' を削除しました。"))
 
+def _clear_auth_session():
+    for key in ("auth_state", "auth_user_id", "auth_rp_id"):
+        session.pop(key, None)
+
+
 @bp.route("/login_start", methods=["POST"])
 def login_start():
-    try:
-        username = request.json.get("username")
-        if not username:
-            return jsonify({"error": "Username required"}), 400
+    """Passkey ログインを開始する。
 
-        logger.debug("=== login_start ===")
-        logger.debug("Username: %s", username)
+    username なし: 端末に保存された Passkey から選んでもらう（ワンタップログイン）
+    username あり: そのユーザーの Passkey に限定する（旧方式・予備）
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        username = (payload.get("username") or "").strip()
 
         request_server, rp_id = _make_webauthn_server(request)
         logger.debug("Using RP_ID for login: %s", rp_id)
-        session["auth_rp_id"] = rp_id
 
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            logger.debug("User not found")
-            return jsonify({"error": "User not found"}), 404
+        allow_credentials = None
+        user = None
+        if username:
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            if not user.credentials:
+                return jsonify({"error": "No credential registered"}), 400
+            allow_credentials = [AttestedCredentialData(c.public_key) for c in user.credentials]
 
-        logger.debug("User found with id: %d", user.id)
+        options, state = request_server.authenticate_begin(
+            allow_credentials,
+            user_verification="preferred",
+        )
 
-        # 登録されているCredentialを取得
-        credential = Credential.query.filter_by(user_id=user.id).first()
-        if not credential:
-            logger.debug("No credential registered for user")
-            return jsonify({"error": "No credential registered"}), 400
-
-        logger.debug("Credential found with id (DB pk): %d", credential.id)
-        logger.debug("Credential credential_id (hex): %s", credential.credential_id.hex())
-
-        # public_keyはAttestedCredentialDataのバイト表現なので、直接復元する
-        cred_data = AttestedCredentialData(credential.public_key)
-
-        # FIDO2 サーバーで認証開始（チャレンジとオプションを生成）
-        options, state = request_server.authenticate_begin([cred_data])
-
-        # 認証状態をセッションに保存（バイナリはセッションに入れない）
+        _clear_auth_session()
         session["auth_state"] = state
-        # ← login_user_id はまだ設定しない（login_finish で認証成功後に設定）
-        session["auth_user_id"] = user.id  # 認証用の一時的なID（ログイン状態ではない）
-        # 後で使用するためにDBレコードIDのみを保存（バイナリはDBに保持）
-        session["auth_credential_id"] = credential.id
-        
-        logger.debug("Session updated: auth_user_id=%d (temp), auth_credential_id=%d", user.id, credential.id)
+        session["auth_rp_id"] = rp_id
+        if user:
+            # ユーザー指定時は、そのユーザーの Passkey 以外を受け付けない
+            session["auth_user_id"] = user.id
 
-        # チャレンジをbase64urlエンコードしてクライアントに渡す
-        challenge_encoded = websafe_encode(options.public_key.challenge)
-
-        # デバッグ：DBに保存されているcredential_idをログ出力
-        logger.debug("=== login_start debug ===")
-        logger.debug("RP_ID: %s", RP_ID)
-        logger.debug("ORIGIN: %s", ORIGIN)
-        logger.debug("DB credential_id (hex): %s", credential.credential_id.hex())
-        logger.debug("DB credential_id (len): %d bytes", len(credential.credential_id))
-        
-        # allow_credentials に含まれる credential_id もログ出力
-        allow_creds_list = []
-        for cred in options.public_key.allow_credentials:
-            cred_id_hex = cred.id.hex()
-            logger.debug("allow_credentials id (hex): %s", cred_id_hex)
-            logger.debug("allow_credentials id (len): %d bytes", len(cred.id))
-            allow_creds_list.append({
-                "type": cred.type,
-                "id": websafe_encode(cred.id)
-            })
-
+        pk = options.public_key
         return jsonify({
-            "challenge": challenge_encoded,
-            "rpId": options.public_key.rp_id,
-            "timeout": options.public_key.timeout,
-            "allowCredentials": allow_creds_list,
-            "userVerification": options.public_key.user_verification,
-            "rp": options.public_key.rp_id,
-            "user": {
-                "id": websafe_encode(str(user.id).encode()),
-                "name": user.username,
-                "displayName": user.username
-            }
+            "challenge": websafe_encode(pk.challenge),
+            "rpId": pk.rp_id,
+            "timeout": pk.timeout,
+            "allowCredentials": [
+                {"type": c.type, "id": websafe_encode(c.id)} for c in (pk.allow_credentials or [])
+            ],
+            "userVerification": pk.user_verification,
         })
-    except Exception as e:
+    except Exception:
         logger.exception("login_start failed")
         return jsonify({"error": "Login start failed"}), 500
 
 
-
-from fido2.client import PublicKeyCredentialDescriptor  # 必要なインポートを追加
-
-
-from fido2.webauthn import AuthenticatorAssertionResponse
-
 @bp.route("/login_finish", methods=["POST"])
 def login_finish():
     try:
-        logger.debug("=== login_finish start ===")
-        
-        # 認証用の一時的なユーザーID を取得（ログイン状態ではない）
-        auth_user_id = session.get("auth_user_id")
-        if not auth_user_id:
-            logger.debug("auth_user_id not found in session")
-            return jsonify({"error": "Authentication session not found"}), 400
-
-        user = User.query.get(auth_user_id)
-        if not user:
-            logger.debug("User from session not found")
-            return jsonify({"error": "User not found"}), 400
-
-        logger.debug("User from session: id=%d, username=%s", user.id, user.username)
-
-        data = request.json
-
-        # Base64urlでエンコードされているデータをデコード
-        decoded_raw_id = base64url_decode(data["rawId"])
-        decoded_client_data_json = base64url_decode(data["clientDataJSON"])
-        decoded_authenticator_data = base64url_decode(data["authenticatorData"])
-        decoded_signature = base64url_decode(data["signature"])
-        
-        # デバッグ：スマホから返ってきたrawIdをログ出力
-        logger.debug("=== login_finish debug ===")
-        logger.debug("Received rawId (hex): %s", decoded_raw_id.hex())
-        logger.debug("Received rawId (len): %d bytes", len(decoded_raw_id))
-
-        # 認証状態をセッションから取得
         auth_state = session.get("auth_state")
         if not auth_state:
-            logger.debug("auth_state not found in session")
-            raise ValueError("Authentication state not found in session")
+            return jsonify({"error": "Authentication session not found"}), 400
 
-        # セッションから保存されたCredentialレコードIDを取得し、DBから復元
-        auth_cred_id = session.get("auth_credential_id")
-        if not auth_cred_id:
-            logger.debug("auth_credential_id not found in session")
-            raise ValueError("Credential id not found in session")
-        
-        logger.debug("auth_credential_id from session: %d", auth_cred_id)
+        data = request.get_json(silent=True) or {}
+        decoded_raw_id = base64url_decode(data["rawId"])
 
-        auth_server, _ = _make_webauthn_server(rp_id=session.get("auth_rp_id") or RP_ID)
-        
-        cred_record = Credential.query.get(auth_cred_id)
+        # 端末から返ってきた Passkey の ID で、DB に登録済みの Passkey を探す
+        cred_record = Credential.query.filter_by(credential_id=decoded_raw_id).first()
         if not cred_record:
-            logger.debug("Credential record not found in DB")
-            raise ValueError("Credential record not found")
+            logger.debug("Unknown credential id: %s", decoded_raw_id.hex())
+            raise ValueError("Credential not registered")
 
-        logger.debug("Credential record found: credential_id (hex) = %s", cred_record.credential_id.hex())
+        expected_user_id = session.get("auth_user_id")
+        if expected_user_id and cred_record.user_id != expected_user_id:
+            raise ValueError("Credential does not belong to the requested user")
 
-        # AttestedCredentialDataを復元（public_keyにbytesで保存している）
+        user = cred_record.user
         cred_data = AttestedCredentialData(cred_record.public_key)
 
-        # CollectedClientDataオブジェクトを作成（バイト列を直接渡す）
-        client_data = CollectedClientData(decoded_client_data_json)
-
-        # AuthenticatorDataオブジェクトを作成
-        authenticator_data = AuthenticatorData(decoded_authenticator_data)
-
-        # AuthenticatorAssertionResponseオブジェクトを作成
-        assertion_response = AuthenticatorAssertionResponse(
-            client_data=client_data,
-            authenticator_data=authenticator_data,
-            signature=decoded_signature,
-        )
-
-        # AuthenticationResponseオブジェクトを作成
         auth_response = AuthenticationResponseWA(
             raw_id=decoded_raw_id,
-            response=assertion_response,
+            response=AuthenticatorAssertionResponse(
+                client_data=CollectedClientData(base64url_decode(data["clientDataJSON"])),
+                authenticator_data=AuthenticatorData(base64url_decode(data["authenticatorData"])),
+                signature=base64url_decode(data["signature"]),
+            ),
         )
 
-        logger.debug("About to call authenticate_complete")
+        auth_server, _ = _make_webauthn_server(rp_id=session.get("auth_rp_id") or RP_ID)
+        auth_server.authenticate_complete(auth_state, [cred_data], auth_response)
 
-        # FIDO2サーバーで認証結果を完了させる
-        credential = auth_server.authenticate_complete(
-            auth_state,
-            [cred_data],
-            auth_response
-        )
-
-        logger.debug("authenticate_complete succeeded")
-
-        # 認証が成功した場合に初めて login_user_id を設定（ログイン状態にする）
+        # 認証が成功した場合に初めてログイン状態にする（PERMANENT_SESSION_LIFETIME の間保持）
+        _clear_auth_session()
+        session.permanent = True
         session["login_user_id"] = user.id
         session["login_username"] = user.username
         session["login_is_admin"] = (user.username == _get_default_admin_username())
-        # 認証用の一時データをクリア
-        session.pop("auth_state", None)
-        session.pop("auth_user_id", None)
-        session.pop("auth_credential_id", None)
-        session.pop("auth_rp_id", None)
         logger.debug("Authentication succeeded: login_user_id set to %d", user.id)
-        
+
         return jsonify({"status": "ok"})
-    except Exception as e:
+    except Exception:
         logger.exception("login_finish failed")
-        # エラー時はセッションを完全にクリア（認証失敗）
-        session.pop("auth_state", None)
-        session.pop("auth_user_id", None)
-        session.pop("auth_credential_id", None)
-        session.pop("auth_rp_id", None)
+        _clear_auth_session()
         session.pop("login_user_id", None)
-        logger.debug("Session completely cleared on error")
         return jsonify({"error": "Login failed"}), 400
 
 #以下デバッグ用登録処理
@@ -394,10 +335,10 @@ def register_page():
         return (
             render_template(
                 "login.html",
-                users=User.query.order_by(User.username.asc()).all(),
                 registration_disabled=True,
-                registration_message="新規ユーザー登録は管理者が承認したユーザーのみです。ログイン画面で登録済みユーザーを選択してください。",
+                registration_message="新規ユーザー登録は管理者が承認したユーザーのみです。管理者から届いた登録URLを開いてください。",
                 default_admin_username=_get_default_admin_username(),
+                admin_needs_setup=_admin_needs_passkey_setup(),
             ),
             403,
         )

@@ -115,6 +115,13 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .player-select {
+    padding: 0.55em 0.6em;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    max-width: 180px;
+  }
   .admin-badge {
     color: var(--muted);
     font-weight: 600;
@@ -148,6 +155,7 @@
       <thead>
         <tr>
           <th>ユーザー名</th>
+          <th>本人のプレイヤー</th>
           <th>Passkey登録</th>
           <th>操作</th>
         </tr>
@@ -155,7 +163,20 @@
       <tbody>
         {% for user in users %}
         <tr>
-          <td>{{ user.username }}</td>
+          <td>
+            {{ user.username }}
+            {% if not user.credentials %}<br><small class="admin-badge">Passkey未登録</small>{% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('auth.admin_link_user_player', user_id=user.id) }}">
+              <select name="player_id" class="player-select" onchange="this.form.submit()" aria-label="{{ user.username }} のプレイヤー">
+                <option value="">（未設定）</option>
+                {% for player in players %}
+                <option value="{{ player.id }}" {% if user.player_id == player.id %}selected{% endif %}>{{ player.name }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
           <td>
             {% if user.username != admin_username %}
             <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}" id="issue-passkey-form-{{ user.id }}">

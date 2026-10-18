@@ -10,7 +10,11 @@ from flask import request
 import os
 from functools import wraps
 from flask import redirect, url_for
-from models import db, User, Player, Game, GamePhoto, Title, PlayerTitleAchievement
+from models import (
+    db, User, Player, Game, GamePhoto, Title, PlayerTitleAchievement, AppSetting,
+    compute_all_player_stats, get_achieved_title_ids,
+)
+from sqlalchemy import inspect as sa_inspect, text
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 
@@ -32,6 +36,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=bool(os.environ.get("SESSION_COOKIE_SECURE", "True") == "True"),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
+    # ログイン状態の保持期間（アクセスするたびに延長される）
+    PERMANENT_SESSION_LIFETIME=timedelta(days=int(os.environ.get("SESSION_LIFETIME_DAYS", "30"))),
 )
 
 # Configure basic logging
@@ -48,13 +54,59 @@ if cloudinary is not None and os.environ.get("CLOUDINARY_URL"):
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///mahjong.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
+
+# create_all は既存テーブルに列を足さないため、後から追加した列はここで補う
+_ADDED_COLUMNS = {
+    "user": [
+        ("passkey_enrollment_token", "VARCHAR(128)"),
+        ("passkey_enrollment_expires_at", "TIMESTAMP"),
+        ("player_id", "INTEGER"),
+    ],
+}
+
+
+def _ensure_added_columns():
+    inspector = sa_inspect(db.engine)
+    for table_name, columns in _ADDED_COLUMNS.items():
+        if not inspector.has_table(table_name):
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table_name)}
+        for column_name, column_type in columns:
+            if column_name in existing:
+                continue
+            try:
+                db.session.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN {column_name} {column_type}'))
+                db.session.commit()
+                logger.info("Added column %s.%s", table_name, column_name)
+            except Exception:
+                # 複数ワーカーが同時に起動した場合など、他方が先に追加済みなら失敗してよい
+                db.session.rollback()
+                logger.exception("Failed to add column %s.%s", table_name, column_name)
+
+
 with app.app_context():
     db.create_all()
+    _ensure_added_columns()
 
 migrate = Migrate(app, db)
 
 from auth import bp as auth_bp
 app.register_blueprint(auth_bp)
+
+
+@app.context_processor
+def inject_current_player():
+    """ナビバーの「マイページ」用に、ログインユーザーに紐づくプレイヤーIDを渡す"""
+    user_id = session.get("login_user_id")
+    if not user_id:
+        return {"my_player_id": None}
+    user = db.session.get(User, user_id)
+    return {"my_player_id": user.player_id if user else None}
+
+
+def _current_user():
+    user_id = session.get("login_user_id")
+    return db.session.get(User, user_id) if user_id else None
 
 def login_required(f):
     @wraps(f)
@@ -98,27 +150,32 @@ def logout():
     return redirect(url_for("auth.login_page"))
 
 def recalc_total_scores():
-    players = Player.query.all()
-    for player in players:
-        total = 0
-        games = Game.query.filter(
-            (Game.player1_id == player.id) |
-            (Game.player2_id == player.id) |
-            (Game.player3_id == player.id) |
-            (Game.player4_id == player.id)
-        ).all()
+    """全対局を1回だけ読み込んで、各プレイヤーの累計スコアを計算し直す（対局の削除時などに使う）"""
+    totals = defaultdict(int)
+    for g in Game.query.all():
+        totals[g.player1_id] += g.score1 or 0
+        totals[g.player2_id] += g.score2 or 0
+        totals[g.player3_id] += g.score3 or 0
+        totals[g.player4_id] += g.score4 or 0
 
-        for g in games:
-            if g.player1_id == player.id:
-                total += g.score1
-            elif g.player2_id == player.id:
-                total += g.score2
-            elif g.player3_id == player.id:
-                total += g.score3
-            elif g.player4_id == player.id:
-                total += g.score4
-        player.total_score = total
+    for player in Player.query.all():
+        player.total_score = totals.get(player.id, 0)
     db.session.commit()
+
+
+DEFAULT_OKA = 0
+DEFAULT_UMA = "20000,-20000,-40000,-60000"
+# 持ち点の入力単位（画面では百点単位で入力し、サーバー側で点数に戻す）
+SCORE_INPUT_UNIT = 100
+
+
+def _load_rule_settings():
+    """全員で共有するオカ・ウマ設定をDBから読む"""
+    try:
+        oka = int(AppSetting.get_value("rule_oka", DEFAULT_OKA))
+    except (TypeError, ValueError):
+        oka = DEFAULT_OKA
+    return {"oka": oka, "uma": AppSetting.get_value("rule_uma", DEFAULT_UMA)}
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -130,23 +187,22 @@ def index():
 
     if request.method == "POST":
         try:
+            # 画面からは百点単位で送られてくる（score_unit なしの場合は点数そのもの）
+            score_unit = SCORE_INPUT_UNIT if request.form.get("score_unit") == str(SCORE_INPUT_UNIT) else 1
+
             # フォームデータの取得
             form_data = {
                 "player1_id": request.form.get("player1_id", ""),
-                "score1": int(request.form.get("score1", 0)),
+                "score1": int(request.form.get("score1", 0)) * score_unit,
                 "player2_id": request.form.get("player2_id", ""),
-                "score2": int(request.form.get("score2", 0)),
+                "score2": int(request.form.get("score2", 0)) * score_unit,
                 "player3_id": request.form.get("player3_id", ""),
-                "score3": int(request.form.get("score3", 0)),
+                "score3": int(request.form.get("score3", 0)) * score_unit,
                 "player4_id": request.form.get("player4_id", ""),
-                "score4": int(request.form.get("score4", 0)),
+                "score4": int(request.form.get("score4", 0)) * score_unit,
                 "oka": int(request.form.get("oka", 0)),
-                "uma": request.form.get("uma", "20000,-20000,-40000,-60000"),
+                "uma": request.form.get("uma", DEFAULT_UMA),
             }
-            
-            # セッションに保存
-            session["last_oka"] = form_data["oka"]
-            session["last_uma"] = form_data["uma"]
 
             # プレイヤーIDの重複チェック
             player_ids = [
@@ -162,7 +218,7 @@ def index():
             # スコアの合計チェック
             total_score = form_data["score1"] + form_data["score2"] + form_data["score3"] + form_data["score4"]
             if total_score != 100000:
-                error = f"スコアの合計が100,000ではありません（現在: {total_score}）。"
+                error = f"スコアの合計が100,000ではありません（現在: {total_score:,}）。"
                 return render_template("index.html", players=players, error=error, form_data=form_data)
 
             # スコア順に並び替え（降順）
@@ -208,6 +264,9 @@ def index():
                 uma4=uma_values[3]
             )
             db.session.add(new_game)
+            # 次回の入力用に、ルールを全員共通の設定として保存
+            AppSetting.set_value("rule_oka", oka_value)
+            AppSetting.set_value("rule_uma", ",".join(str(v) for v in uma_values))
             db.session.commit()
 
             uploaded_photo = request.files.get('photo')
@@ -249,10 +308,12 @@ def index():
     form_data.update({
         f"score{i}": 0 for i in range(1, 5)
     })
-    form_data.update({
-    "oka": session.get("last_oka", 0),
-    "uma": session.get("last_uma", "20000,-20000,-40000,-60000"),
-    })
+    form_data.update(_load_rule_settings())
+
+    # ログインユーザーに紐づくプレイヤーを東家に初期選択しておく
+    current_user = _current_user()
+    if current_user and current_user.player_id:
+        form_data["player1_id"] = str(current_user.player_id)
 
     return render_template("index.html", players=players, error=error, form_data=form_data)
 
@@ -301,8 +362,7 @@ def _save_game_photo(uploaded_file):
 @app.route("/results")
 @login_required
 def results():
-    recalc_total_scores()
-
+    # 累計スコアは対局の追加・削除時に更新済みなので、ここでは再計算しない
     game_photos = {photo.game_id: photo for photo in GamePhoto.query.all()}
 
     # 複数日付取得
@@ -509,6 +569,7 @@ def delete_player(player_id):
         flash("このプレイヤーはゲームに使用されているため削除できません。")
         return redirect(url_for('players'))
 
+    User.query.filter_by(player_id=player.id).update({"player_id": None})
     db.session.delete(player)
     db.session.commit()
     return redirect(url_for('players'))
@@ -618,17 +679,14 @@ def build_player_navigation(players, current_player_id):
 
 def get_unlocked_title_ids(player, players=None, player_stats=None):
     """称号の解除済み一覧を、統計計算を再利用して高速に返す"""
-    if players is None:
-        players = Player.query.order_by(Player.id).all()
-
     if player_stats is None:
-        player_stats = {p.id: p.calculate_stats() for p in players}
+        player_stats = compute_all_player_stats(players)
 
+    achieved_title_ids = get_achieved_title_ids(player.id)
     unlocked_title_ids = set()
     for title in Title.query.order_by(Title.id).all():
         if title.is_permanent:
-            achievement = PlayerTitleAchievement.query.filter_by(player_id=player.id, title_id=title.id).first()
-            if achievement:
+            if title.id in achieved_title_ids:
                 unlocked_title_ids.add(title.id)
             continue
         if title.meets_conditions(player, all_player_stats=player_stats):
@@ -644,7 +702,7 @@ def profile(player_id):
 
     # 全メンバーのプロフィール指標を比較して、各指標のトップを判定
     players = Player.query.order_by(Player.id).all()
-    player_stats = {p.id: p.calculate_stats() for p in players}
+    player_stats = compute_all_player_stats(players)
     navigation = build_player_navigation(players, player.id)
 
     # ゲーム未参加プレイヤーは比較対象外
@@ -675,16 +733,14 @@ def profile(player_id):
     is_top_player = stats['best_avg_rank']
 
     # 永続称号は、条件を満たした時点で解除履歴を保存する
-    _record_permanent_achievements([player])
+    _record_permanent_achievements([player], all_player_stats=player_stats)
 
     # 装備中の称号の条件確認と自動削除
-    for slot_attr, title_attr in [('active_title_1_id', 'active_title_1'), 
-                                    ('active_title_2_id', 'active_title_2'), 
-                                    ('active_title_3_id', 'active_title_3')]:
+    for slot_attr in ('active_title_1_id', 'active_title_2_id', 'active_title_3_id'):
         title_id = getattr(player, slot_attr)
         if title_id:
-            title = Title.query.get(title_id)
-            if title and not title.is_permanent and not title.check_unlocked(player):
+            title = db.session.get(Title, title_id)
+            if title and not title.is_permanent and not title.meets_conditions(player, all_player_stats=player_stats):
                 # 条件を満たさなくなったので外す
                 setattr(player, slot_attr, None)
 
@@ -708,33 +764,49 @@ def profile(player_id):
         acquired_titles=acquired_titles,
         navigation=navigation,
         is_top_player=is_top_player,
+        can_edit_titles=_can_edit_player_titles(player),
     )
 
 
-def _record_permanent_achievements(players):
+def _can_edit_player_titles(player):
+    """称号を付け替えられるのは、管理者・本人・まだ誰にも紐づいていないプレイヤーの場合"""
+    if session.get("login_is_admin"):
+        return True
+    current_user = _current_user()
+    if current_user and current_user.player_id == player.id:
+        return True
+    return not User.query.filter_by(player_id=player.id).first()
+
+
+def _record_permanent_achievements(players, all_player_stats=None):
     """現在の成績で条件を満たした永続称号を解除履歴へ記録する"""
     permanent_titles = Title.query.filter_by(is_permanent=True).all()
+    if not permanent_titles:
+        return
+    if all_player_stats is None:
+        all_player_stats = compute_all_player_stats()
     for player in players:
+        achieved_title_ids = get_achieved_title_ids(player.id)
         for title in permanent_titles:
-            if title.meets_conditions(player) and not PlayerTitleAchievement.query.filter_by(
-                player_id=player.id,
-                title_id=title.id,
-            ).first():
+            if title.id not in achieved_title_ids and title.meets_conditions(player, all_player_stats=all_player_stats):
                 db.session.add(PlayerTitleAchievement(player_id=player.id, title_id=title.id))
 
 
 @app.route("/api/player/<int:player_id>/title/update", methods=["POST"])
+@login_required
 def update_player_title(player_id):
     """プレイヤーの装備中の称号を更新"""
     data = request.get_json()
     player = Player.query.get_or_404(player_id)
-    
+    if not _can_edit_player_titles(player):
+        return jsonify({'error': '本人のプレイヤーの称号のみ変更できます'}), 403
+
     slot = data.get('slot')  # 1, 2, または 3
     title_id = data.get('title_id')  # nullは許可（外す場合）
-    
+
     if slot not in [1, 2, 3]:
         return jsonify({'error': 'Invalid slot'}), 400
-    
+
     # タイトルが指定されている場合、取得可能か確認
     if title_id:
         title = Title.query.get_or_404(title_id)

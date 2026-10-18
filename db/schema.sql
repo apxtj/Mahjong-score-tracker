@@ -84,4 +84,13 @@ CREATE TABLE IF NOT EXISTS public.player_title_achievement (
     CONSTRAINT uq_player_title_achievement UNIQUE (player_id, title_id)
 );
 
+-- ログインユーザーとプレイヤーの紐付け（既存DBにも追加できるよう ALTER で定義）
+ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS player_id integer REFERENCES public.player(id);
+
+-- 対局ルール（オカ・ウマ）などの共通設定
+CREATE TABLE IF NOT EXISTS public.app_setting (
+    key varchar(50) PRIMARY KEY,
+    value text NOT NULL
+);
+
 COMMIT;

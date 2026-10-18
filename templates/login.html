@@ -131,6 +131,22 @@
     margin: 14px 0 0;
     color: var(--muted);
   }
+  .primary-login {
+    display: block;
+    width: 100%;
+    max-width: 360px;
+    padding: 1em 1.2em;
+    font-size: 1.1rem;
+    margin-top: 8px;
+  }
+  .fallback {
+    margin-top: 24px;
+    color: var(--muted);
+  }
+  .fallback summary {
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
 </style>
 </head>
 <body>
@@ -139,36 +155,31 @@
 </script>
 <div class="container">
   <h2>ログイン</h2>
-  <p class="helper">ユーザーを選んで、端末の指紋/顔認証でログインします。</p>
-  <p class="helper">管理者アカウントは初回に Passkey を登録してから使えます。</p>
+  <p class="helper">ボタンを押して、端末の指紋/顔認証でログインします。</p>
 
   {% if registration_disabled %}
     <div class="notice">{{ registration_message }}</div>
   {% endif %}
 
-  <div class="panel">
-    {% if users %}
-    <div class="user-list" aria-label="登録済みユーザー一覧">
-      {% for user in users %}
-        <button type="button" class="user-option" data-username="{{ user.username }}">{{ user.username }}</button>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="empty">まだ登録済みのユーザーがいません。</p>
-    {% endif %}
-  </div>
-
-  <form id="loginForm">
-    <label for="username">ユーザー名</label>
-    <input type="text" id="username" list="userList" placeholder="ユーザー名を選択または入力" required>
-    <datalist id="userList">
-      {% for user in users %}
-        <option value="{{ user.username }}">{{ user.username }}</option>
-      {% endfor %}
-    </datalist>
-    <button type="submit">このユーザーでログイン</button>
-  </form>
+  <button type="button" id="passkeyLoginButton" class="primary-login">Passkey でログイン</button>
   <div id="error"></div>
+
+  {% if admin_needs_setup %}
+  <div class="panel">
+    <p class="helper"><strong>管理者（{{ default_admin_username }}）の Passkey がまだ登録されていません。</strong></p>
+    <p class="helper">最初の1回だけ、この端末で管理者の Passkey を登録してください。登録後はこの欄は表示されません。</p>
+    <button type="button" id="adminSetupButton">管理者の Passkey を登録</button>
+  </div>
+  {% endif %}
+
+  <details class="fallback">
+    <summary>うまくログインできない場合（ユーザー名を指定）</summary>
+    <form id="loginForm">
+      <label for="username">ユーザー名</label>
+      <input type="text" id="username" placeholder="ユーザー名を入力" autocomplete="username" required>
+      <button type="submit">このユーザーでログイン</button>
+    </form>
+  </details>
 </div>
 
 <script src="{{ url_for('static', filename='login.js') }}"></script>

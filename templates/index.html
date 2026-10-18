@@ -10,9 +10,11 @@
         {% endif %}
 
         <p id="score-total" class="text-muted mt-2">合計: 0 点</p>
+        <p class="small text-muted">持ち点は百点単位で入力します（例: 25000点 → 250）。3人分を入れると残り1人は自動で入ります。</p>
 
         <form method="POST" enctype="multipart/form-data">
             {% set fd = form_data or {} %}
+            <input type="hidden" name="score_unit" value="100">
 
             {% set winds = ["東家", "南家", "西家", "北家"] %}
             {% for i in range(1, 5) %}
@@ -26,8 +28,12 @@
                     </option>
                     {% endfor %}
                 </select>
-                <input type="number" id="score{{ i }}" name="score{{ i }}" class="form-control mt-2" placeholder="持ち点"
-                       value="{{ fd["score" ~ i] if fd["score" ~ i] is defined and fd["score" ~ i] != 0 else '' }}" required>
+                <div class="input-group mt-2">
+                    <input type="number" id="score{{ i }}" name="score{{ i }}" class="form-control" placeholder="例: 250"
+                           inputmode="numeric" step="1"
+                           value="{{ (fd["score" ~ i] // 100) if fd["score" ~ i] is defined and fd["score" ~ i] != 0 else '' }}" required>
+                    <span class="input-group-text">00 点</span>
+                </div>
             </div>
             {% endfor %}
 
@@ -51,7 +57,7 @@
                     <label for="uma" class="form-label">ウマ (順位ごとのボーナスをカンマ区切りで4つ入力)</label>
                     <input type="text" name="uma" class="form-control" placeholder="例: 30000,10000,-10000,-30000"
                         value="{{ form_data.uma if form_data and form_data.uma is defined else '30000,10000,-10000,-30000' }}" required>
-                    <small class="form-text text-muted">順位1位から4位までのウマ点数をカンマで区切って入力してください。</small>
+                    <small class="form-text text-muted">順位1位から4位までのウマ点数をカンマで区切って入力してください。オカ・ウマは保存すると全員共通の設定として次回も使われます。</small>
                 </div>
 
                 <div class="mb-3">
@@ -80,59 +86,69 @@
     </script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const totalTarget = 100000;
-            const inputs = [
-                document.getElementById("score1"),
-                document.getElementById("score2"),
-                document.getElementById("score3"),
-                document.getElementById("score4")
-            ];
+            const unit = 100;                  // 入力は百点単位
+            const totalTarget = 100000 / unit; // = 1000
+            const inputs = [1, 2, 3, 4].map(i => document.getElementById(`score${i}`));
             const totalDisplay = document.getElementById("score-total");
-        
-            function updateScores() {
-                const values = inputs.map(i => {
-                    const val = i.value.trim();
-                    return val === "" ? null : parseInt(val, 10);
-                });
-        
-                const sum = values.reduce((acc, val) => acc + (val || 0), 0);
-                totalDisplay.textContent = `合計: ${sum.toLocaleString()} 点`;
+            // 自動で埋めた欄のインデックス（手で入力したら解除）
+            let autoIndex = null;
+
+            function readValue(input) {
+                const val = input.value.trim();
+                if (val === "") return null;
+                const parsed = parseInt(val, 10);
+                return isNaN(parsed) ? null : parsed;
             }
-        
-            // blurイベントでのみ自動補完を実行
-            inputs.forEach((input, idx) => {
-                input.addEventListener("blur", () => {
-                    const values = inputs.map(i => {
-                        const val = i.value.trim();
-                        return val === "" ? null : parseInt(val, 10);
-                    });
-        
-                    const filledIndexes = values
-                        .map((v, i) => (v !== null && !isNaN(v) ? i : null))
-                        .filter(i => i !== null);
-                    const emptyIndexes = values
-                        .map((v, i) => (v === null || isNaN(v) ? i : null))
-                        .filter(i => i !== null);
-        
-                    const sum = values.reduce((acc, val) => acc + (val || 0), 0);
-        
-                    // 3人だけ入力済みなら、自動補完する
-                    if (filledIndexes.length === 3 && emptyIndexes.length === 1) {
-                        const targetIndex = emptyIndexes[0];
-                        const remaining = totalTarget - sum;
-                        inputs[targetIndex].value = remaining >= 0 ? remaining : 0;
+
+            function updateTotal() {
+                const sum = inputs.reduce((acc, input) => acc + (readValue(input) || 0), 0);
+                const diff = totalTarget - sum;
+                let text = `合計: ${(sum * unit).toLocaleString()} 点`;
+                if (diff !== 0 && inputs.every(input => readValue(input) !== null)) {
+                    text += `（あと ${(diff * unit).toLocaleString()} 点）`;
+                }
+                totalDisplay.textContent = text;
+                totalDisplay.classList.toggle("text-danger", diff !== 0 && inputs.every(input => readValue(input) !== null));
+            }
+
+            // 手入力された3人の合計から、残り1人を自動で埋める（飛びのマイナスにも対応）
+            function autofill() {
+                const manualIndexes = inputs
+                    .map((input, i) => (i !== autoIndex && readValue(input) !== null ? i : null))
+                    .filter(i => i !== null);
+                if (manualIndexes.length !== 3) {
+                    // 手入力が3人未満に戻ったら、自動で埋めた値は消す
+                    if (autoIndex !== null && manualIndexes.length < 3) {
+                        inputs[autoIndex].value = "";
+                        inputs[autoIndex].classList.remove("bg-light");
+                        autoIndex = null;
                     }
-        
-                    // 合計表示を更新
-                    updateScores();
+                    return;
+                }
+
+                const targetIndex = [0, 1, 2, 3].find(i => !manualIndexes.includes(i));
+                if (autoIndex === null && readValue(inputs[targetIndex]) !== null) return;
+
+                const sum = manualIndexes.reduce((acc, i) => acc + readValue(inputs[i]), 0);
+                inputs[targetIndex].value = totalTarget - sum;
+                inputs[targetIndex].classList.add("bg-light");
+                autoIndex = targetIndex;
+            }
+
+            inputs.forEach((input, idx) => {
+                input.addEventListener("input", () => {
+                    if (idx === autoIndex) {
+                        // 自動入力欄を手で直したら、以後は手入力扱い
+                        autoIndex = null;
+                        input.classList.remove("bg-light");
+                    } else {
+                        autofill();
+                    }
+                    updateTotal();
                 });
-        
-                // 合計表示は input に合わせてリアルタイム更新
-                input.addEventListener("input", updateScores);
             });
-        
-            // 初期表示
-            updateScores();
+
+            updateTotal();
         });
         </script>                
 {% endblock %}

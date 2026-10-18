@@ -210,6 +210,9 @@
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('add_player') }}">プレイヤー情報追加</a></li>
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('players') }}">プレイヤー情報一覧</a></li>
           {% if session.get('login_user_id') %}
+          {% if my_player_id %}
+          <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('profile', player_id=my_player_id) }}">マイページ</a></li>
+          {% endif %}
           {% if session.get('login_is_admin') %}
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('auth.admin_users') }}">ユーザー管理</a></li>
           <li class="nav-item me-3"><a class="nav-link" href="{{ url_for('admin_titles') }}">称号管理</a></li>

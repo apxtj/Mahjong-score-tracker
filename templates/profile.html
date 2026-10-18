@@ -33,7 +33,7 @@
           <h5 class="card-title mb-4">🏆 装備中の称号</h5>
           <div class="title-slots-grid">
             <!-- スロット1 -->
-            <div class="title-slot-container" onclick="openTitleModal(1)">
+            <div class="title-slot-container"{% if can_edit_titles %} onclick="openTitleModal(1)"{% endif %}>
               {% if player.active_title_1 %}
                 <img 
                   src="{{ player.active_title_1.badge_image_url }}" 
@@ -49,7 +49,7 @@
             </div>
             
             <!-- スロット2 -->
-            <div class="title-slot-container" onclick="openTitleModal(2)">
+            <div class="title-slot-container"{% if can_edit_titles %} onclick="openTitleModal(2)"{% endif %}>
               {% if player.active_title_2 %}
                 <img 
                   src="{{ player.active_title_2.badge_image_url }}" 
@@ -65,7 +65,7 @@
             </div>
             
             <!-- スロット3 -->
-            <div class="title-slot-container" onclick="openTitleModal(3)">
+            <div class="title-slot-container"{% if can_edit_titles %} onclick="openTitleModal(3)"{% endif %}>
               {% if player.active_title_3 %}
                 <img 
                   src="{{ player.active_title_3.badge_image_url }}" 

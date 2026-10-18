@@ -30,8 +30,6 @@ async function arrayBufferToBase64(buffer) {
 
 
 const DEFAULT_ADMIN_USERNAME = window.DEFAULT_ADMIN_USERNAME || 'admin';
-const userButtons = document.querySelectorAll('.user-option');
-const usernameInput = document.getElementById('username');
 
 async function registerAdminPasskey(username, errorDiv) {
     errorDiv.textContent = "管理者の Passkey を初回登録しています...";
@@ -92,33 +90,20 @@ async function registerAdminPasskey(username, errorDiv) {
     }
 }
 
-userButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-        const username = button.dataset.username;
-        usernameInput.value = username;
-        usernameInput.focus();
-        const errorDiv = document.getElementById('error');
-        if (errorDiv) errorDiv.textContent = '';
-    });
-});
-
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const username = usernameInput.value.trim();
-    const errorDiv = document.getElementById("error");
+async function loginWithPasskey(username, errorDiv) {
     errorDiv.textContent = "";
 
-    if (!username) {
-        errorDiv.textContent = "ユーザー名を選択してください";
+    if (!window.PublicKeyCredential) {
+        errorDiv.textContent = "このブラウザはPasskeyに対応していません。";
         return;
     }
 
     try {
-        // 1️⃣ サーバーに challenge をリクエスト
+        // 1️⃣ サーバーに challenge をリクエスト（username なしなら端末の Passkey から選ぶ）
         const startResp = await fetch("/login_start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username })
+            body: JSON.stringify(username ? { username } : {})
         });
         const options = await startResp.json();
 
@@ -127,69 +112,31 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
                 await registerAdminPasskey(username, errorDiv);
                 return;
             }
-            errorDiv.textContent = options.error;
-            return;
-        }
-
-        // options.allowCredentials が存在するか確認
-        if (!options.allowCredentials) {
-            errorDiv.textContent = "認証情報が見つかりません。";
-            return;
-        }
-
-        // allowCredentials の id を Base64 から ArrayBuffer に変換
-        const allowCredentials = await Promise.all(
-            options.allowCredentials.map(async cred => ({
-                id: await base64ToArrayBuffer(cred.id),  // id を正しく変換
-                type: cred.type || "public-key"  // type が無い場合は 'public-key' とする
-            }))
-        );
-        
-        // デバッグ：登録されている credential id をログに出力
-        console.log("Allow Credentials count:", allowCredentials.length);
-        options.allowCredentials.forEach((cred, idx) => {
-            console.log(`Credential ${idx} (base64url):`, cred.id);
-            console.log(`Credential ${idx} (array):`, new Uint8Array(allowCredentials[idx].id));
-        });
-
-        // challenge の存在を確認してから変換
-        if (!options.challenge) {
-            errorDiv.textContent = "サーバーから challenge が返されていません。";
-            return;
-        }
-        const challengeBuffer = await base64ToArrayBuffer(options.challenge);
-
-        // rp や user.id の存在確認
-        if (!options.rp || !options.user || !options.user.id) {
-            errorDiv.textContent = "サーバーから必要なユーザーデータが返されていません。";
+            errorDiv.textContent = options.error === "User not found" ? "ユーザーが見つかりません。" : options.error;
             return;
         }
 
         const publicKey = {
-            challenge: challengeBuffer,
+            challenge: await base64ToArrayBuffer(options.challenge),
             timeout: options.timeout,
             rpId: options.rpId,
             userVerification: options.userVerification,
-            allowCredentials: allowCredentials,
         };
-
-        // WebAuthn サポートの確認
-        if (!window.PublicKeyCredential) {
-            errorDiv.textContent = "このブラウザはWebAuthnをサポートしていません。";
-            return;
+        if (options.allowCredentials && options.allowCredentials.length > 0) {
+            publicKey.allowCredentials = await Promise.all(
+                options.allowCredentials.map(async cred => ({
+                    id: await base64ToArrayBuffer(cred.id),
+                    type: cred.type || "public-key"
+                }))
+            );
         }
 
         // 2️⃣ デバイスで生体認証
         const credential = await navigator.credentials.get({ publicKey });
-
         if (!credential) {
             errorDiv.textContent = "認証に失敗しました。";
             return;
         }
-
-        // デバッグ：スマホから返ってきた credential の rawId をログに出力
-        console.log("Credential from device (rawId):", new Uint8Array(credential.rawId));
-        console.log("Credential from device (rawId hex):", Array.from(new Uint8Array(credential.rawId)).map(b => b.toString(16).padStart(2, '0')).join(''));
 
         // 3️⃣ 認証結果をサーバーに送信
         const authData = {
@@ -204,22 +151,42 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(authData)
         });
+        const result = await finishResp.json().catch(() => ({}));
 
-        if (!finishResp.ok) {
-            errorDiv.textContent = "サーバーエラー: ログイン処理が完了しませんでした。";
+        if (finishResp.ok && result.status === "ok") {
+            window.location.href = "/";
             return;
         }
-
-        const result = await finishResp.json();
-
-        if (result.status === "ok") {
-            window.location.href = "/";
-        } else {
-            errorDiv.textContent = "ログイン失敗: " + (result.error || "不明なエラー");
-        }
-
+        errorDiv.textContent = "ログインできませんでした。この端末の Passkey が登録されていない可能性があります。";
     } catch (err) {
         console.error(err);
+        if (err && err.name === "NotAllowedError") {
+            errorDiv.textContent = "認証がキャンセルされました。";
+            return;
+        }
         errorDiv.textContent = "エラーが発生しました: " + err;
     }
+}
+
+const errorDiv = document.getElementById("error");
+
+document.getElementById("passkeyLoginButton").addEventListener("click", () => {
+    loginWithPasskey("", errorDiv);
+});
+
+const adminSetupButton = document.getElementById("adminSetupButton");
+if (adminSetupButton) {
+    adminSetupButton.addEventListener("click", () => {
+        registerAdminPasskey(DEFAULT_ADMIN_USERNAME, errorDiv);
+    });
+}
+
+document.getElementById("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const username = document.getElementById("username").value.trim();
+    if (!username) {
+        errorDiv.textContent = "ユーザー名を入力してください";
+        return;
+    }
+    loginWithPasskey(username, errorDiv);
 });

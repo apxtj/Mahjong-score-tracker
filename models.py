@@ -8,8 +8,32 @@ class User(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)
     passkey_enrollment_token = db.Column(db.String(128), unique=True, nullable=True)
     passkey_enrollment_expires_at = db.Column(db.DateTime, nullable=True)
+    # このユーザー本人のプレイヤー（任意）
+    player_id = db.Column(db.Integer, db.ForeignKey("player.id"), nullable=True)
 
     credentials = db.relationship("Credential", backref="user", lazy=True)
+    player = db.relationship("Player", foreign_keys=[player_id])
+
+
+class AppSetting(db.Model):
+    """オカ・ウマなど、全員で共有する設定値"""
+    __tablename__ = "app_setting"
+
+    key = db.Column(db.String(50), primary_key=True)
+    value = db.Column(db.Text, nullable=False)
+
+    @classmethod
+    def get_value(cls, key, default=None):
+        setting = db.session.get(cls, key)
+        return setting.value if setting else default
+
+    @classmethod
+    def set_value(cls, key, value):
+        setting = db.session.get(cls, key)
+        if setting:
+            setting.value = str(value)
+        else:
+            db.session.add(cls(key=key, value=str(value)))
 
 class Credential(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -89,10 +113,11 @@ class Player(db.Model):
                 return rank
         return None
 
-    def calculate_stats(self):
-        """全スタッツを計算して辞書で返す"""
-        games = self.get_all_games()
-        
+    def calculate_stats(self, games=None):
+        """全スタッツを計算して辞書で返す（games を渡すとDBを引かずにそれを使う。日付・ID順であること）"""
+        if games is None:
+            games = self.get_all_games()
+
         if not games:
             return {
                 'total_games': 0,
@@ -200,6 +225,28 @@ class Player(db.Model):
         
         return max_consecutive
 
+def compute_all_player_stats(players=None):
+    """全プレイヤーのスタッツを、対局を1回だけ読み込んでまとめて計算する"""
+    if players is None:
+        players = Player.query.order_by(Player.id).all()
+
+    games_by_player = {player.id: [] for player in players}
+    for game in Game.query.order_by(Game.date, Game.id).all():
+        for player_id in {game.player1_id, game.player2_id, game.player3_id, game.player4_id}:
+            if player_id in games_by_player:
+                games_by_player[player_id].append(game)
+
+    return {player.id: player.calculate_stats(games=games_by_player[player.id]) for player in players}
+
+
+def get_achieved_title_ids(player_id):
+    """永続称号の解除履歴を1クエリで取得する"""
+    return {
+        title_id for (title_id,) in db.session.query(PlayerTitleAchievement.title_id)
+        .filter_by(player_id=player_id).all()
+    }
+
+
 # ゲーム戦績モデル
 class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -268,8 +315,7 @@ class Title(db.Model):
     def meets_conditions(self, player, all_player_stats=None):
         """プレイヤーが現在の成績でこの称号の条件を満たしているか確認"""
         if all_player_stats is None:
-            all_players = Player.query.order_by(Player.id).all()
-            all_player_stats = {p.id: p.calculate_stats() for p in all_players}
+            all_player_stats = compute_all_player_stats()
 
         stats = all_player_stats.get(player.id)
         if stats is None:
@@ -346,17 +392,15 @@ class Title(db.Model):
 
         return True
 
-    def check_unlocked(self, player):
+    def check_unlocked(self, player, all_player_stats=None, achieved_title_ids=None):
         """現在条件または永続解除履歴により称号を使用できるか確認"""
         if self.is_permanent:
-            achievement = PlayerTitleAchievement.query.filter_by(
-                player_id=player.id,
-                title_id=self.id,
-            ).first()
-            if achievement:
+            if achieved_title_ids is None:
+                achieved_title_ids = get_achieved_title_ids(player.id)
+            if self.id in achieved_title_ids:
                 return True
 
-        return self.meets_conditions(player)
+        return self.meets_conditions(player, all_player_stats=all_player_stats)
 
 
 class PlayerTitleAchievement(db.Model):
