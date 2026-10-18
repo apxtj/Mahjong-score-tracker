@@ -102,17 +102,11 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         }
 
         const publicKey = {
-            challenge: challengeBuffer,  // challenge は正しく変換されたものを使用
-            rp: options.rp,  // rp が存在するか確認
-            user: {
-                id: await base64ToArrayBuffer(options.user.id),  // user.id を変換
-                name: options.user.name,
-                displayName: options.user.displayName
-            },
-            pubKeyCredParams: options.pubKeyCredParams,
-            authenticatorSelection: options.authenticatorSelection,
+            challenge: challengeBuffer,
             timeout: options.timeout,
-            attestation: options.attestation
+            rpId: options.rpId,
+            userVerification: options.userVerification,
+            allowCredentials: allowCredentials,
         };
 
         // WebAuthn サポートの確認
