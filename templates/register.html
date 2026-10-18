@@ -75,8 +75,12 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
             body: JSON.stringify(data)
         });
         const result = await finishResp.json();
-        if (result.status === "ok") alert("登録成功！");
-        else errorDiv.textContent = "登録失敗: " + (result.error || "不明なエラー");
+        if (result.status === "ok") {
+            alert("登録成功！");
+            window.location.href = "/login";
+            return;
+        }
+        errorDiv.textContent = "登録失敗: " + (result.error || "不明なエラー");
     } catch (err) {
         console.error(err);
         errorDiv.textContent = err;

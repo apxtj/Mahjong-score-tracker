@@ -16,7 +16,7 @@
 </head>
 <body>
   <h2>ユーザー管理</h2>
-  {% if message %}<div class="success">{{ message }}</div>{% endif %}
+  {% if message %}<div class="success" id="admin-message" data-message="{{ message }}">{{ message }}</div>{% endif %}
   {% if error_message %}<div class="error">{{ error_message }}</div>{% endif %}
 
   <form method="post">
@@ -62,5 +62,29 @@
   </table>
 
   <p><a href="{{ url_for('auth.login_page') }}">ログイン画面へ戻る</a></p>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const messageEl = document.getElementById('admin-message');
+      if (!messageEl) return;
+
+      const rawMessage = messageEl.dataset.message || messageEl.textContent || '';
+      const match = rawMessage.match(/https?:\/\/[^\s]+/);
+      if (!match) return;
+
+      const url = match[0];
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url)
+          .then(() => {
+            messageEl.textContent = '登録URLをクリップボードにコピーしました: ' + url;
+          })
+          .catch(() => {
+            messageEl.textContent = '登録URL: ' + url;
+          });
+      } else {
+        messageEl.textContent = '登録URL: ' + url;
+      }
+    });
+  </script>
 </body>
 </html>

@@ -143,7 +143,7 @@ def admin_issue_passkey_registration(user_id):
     db.session.commit()
 
     url = url_for("auth.enroll_user_passkey", token=token, _external=True)
-    return redirect(url)
+    return redirect(url_for("auth.admin_users", message=f"{user.username} の登録URLをクリップボードにコピーしました: {url}"))
 
 @bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 def admin_delete_user(user_id):
