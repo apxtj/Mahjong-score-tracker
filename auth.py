@@ -417,17 +417,44 @@ def enroll_user_passkey(token):
     session["allow_admin_enrollment"] = True
     return render_template("register.html", username=user.username, enrollment_mode=True)
 
+def _get_enrollment_user():
+    """セッションの登録トークンから、有効期限内の登録対象ユーザーを返す"""
+    token = session.get("enrollment_token")
+    if not token:
+        return None
+    user = User.query.filter_by(passkey_enrollment_token=token).first()
+    if not user:
+        return None
+    if user.passkey_enrollment_expires_at and user.passkey_enrollment_expires_at < datetime.utcnow():
+        return None
+    return user
+
+
+def _clear_enrollment_session():
+    session.pop("register_username", None)
+    session.pop("allow_admin_enrollment", None)
+    session.pop("enrollment_token", None)
+
+
 @bp.route("/register_start", methods=["POST"])
 def register_start():
     try:
-        username = (request.json.get("username") or "").strip() if request.is_json and request.json else ""
-        session_username = (session.get("register_username") or "").strip()
-        if not username and session_username:
-            username = session_username
+        admin_enrollment = session.get("allow_admin_enrollment")
+        if admin_enrollment:
+            # 登録URL経由では、トークンに紐づくユーザー以外は登録させない（リクエストのusernameは無視）
+            enrollment_user = _get_enrollment_user()
+            if not enrollment_user:
+                _clear_enrollment_session()
+                return jsonify({"error": "Invalid or expired enrollment token"}), 400
+            username = enrollment_user.username
+        else:
+            username = (request.json.get("username") or "").strip() if request.is_json and request.json else ""
+            session_username = (session.get("register_username") or "").strip()
+            if not username and session_username:
+                username = session_username
         if not username:
             return jsonify({"error": "Username required"}), 400
 
-        admin_enrollment = session.get("allow_admin_enrollment")
         if not _public_registration_enabled() and not admin_enrollment and not _can_register_username(username):
             return jsonify({
                 "error": "Public registration is disabled. Please ask an administrator to create your account."
@@ -529,6 +556,10 @@ def register_finish():
         logger.debug("credential_id (len): %d bytes", len(cred_data.credential_id))
 
         user = User.query.filter_by(username=username).first()
+        if session.get("allow_admin_enrollment"):
+            enrollment_user = _get_enrollment_user()
+            if not enrollment_user or not user or enrollment_user.id != user.id:
+                return jsonify({"error": "Invalid or expired enrollment token"}), 400
         if not user:
             user = User(username=username)
             db.session.add(user)
@@ -544,17 +575,15 @@ def register_finish():
             sign_count=credential.counter,
         )
         db.session.add(cred)
+        # 登録URLは使い切りにする（commit前に消さないとDBに反映されない）
+        user.passkey_enrollment_token = None
+        user.passkey_enrollment_expires_at = None
         db.session.commit()
         logger.debug("Credential saved successfully")
 
         session.pop("register_state", None)
-        session.pop("register_username", None)
         session.pop("register_rp_id", None)
-        session.pop("allow_admin_enrollment", None)
-        session.pop("enrollment_token", None)
-        if user.passkey_enrollment_token:
-            user.passkey_enrollment_token = None
-            user.passkey_enrollment_expires_at = None
+        _clear_enrollment_session()
         logger.debug("Session cleared after registration")
 
         return jsonify({"status": "ok"})

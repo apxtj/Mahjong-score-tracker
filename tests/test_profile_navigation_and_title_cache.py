@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+# app import 時にエンジンが作られるため、import 前にテスト用DBを指定する（実DBを drop_all しないように）
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 from app import app, db, Player, Title, User, build_player_navigation, get_unlocked_title_ids
 
 
@@ -200,14 +203,72 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         db.session.commit()
 
         client = app.test_client()
-        with client.session_transaction() as sess:
-            sess['register_username'] = 'alice'
-            sess['allow_admin_enrollment'] = True
+        self.assertEqual(client.get(f'/enroll/{token}').status_code, 200)
 
         response = client.post('/register_start', json={})
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'challenge', response.data)
+
+    def _create_enrollment_user(self, username='alice', expires_in=timedelta(hours=1)):
+        user = User(
+            username=username,
+            passkey_enrollment_token=f'{username}-token',
+            passkey_enrollment_expires_at=datetime.utcnow() + expires_in,
+        )
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def test_enrollment_ignores_requested_username(self):
+        user = self._create_enrollment_user()
+        client = app.test_client()
+        client.get(f'/enroll/{user.passkey_enrollment_token}')
+
+        response = client.post('/register_start', json={'username': 'someone_else'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['user']['name'], 'alice')
+
+    def test_enrollment_rejects_token_expired_after_opening_url(self):
+        user = self._create_enrollment_user()
+        client = app.test_client()
+        client.get(f'/enroll/{user.passkey_enrollment_token}')
+        user.passkey_enrollment_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        db.session.commit()
+
+        response = client.post('/register_start', json={})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_register_finish_clears_enrollment_token(self):
+        user = self._create_enrollment_user()
+        client = app.test_client()
+        client.get(f'/enroll/{user.passkey_enrollment_token}')
+        client.post('/register_start', json={})
+
+        class FakeCredentialData:
+            credential_id = b'cred-id'
+
+            def __bytes__(self):
+                return b'attested-data'
+
+        class FakeServer:
+            def register_complete(self, state, response):
+                return type('Auth', (), {'credential_data': FakeCredentialData(), 'counter': 0})()
+
+        with patch('auth._make_webauthn_server', return_value=(FakeServer(), 'localhost')):
+            response = client.post('/register_finish', json={
+                'id': 'Y3JlZC1pZA', 'rawId': 'Y3JlZC1pZA',
+                'clientDataJSON': 'e30', 'attestationObject': 'e30',
+            })
+
+        self.assertEqual(response.get_json(), {'status': 'ok'})
+        db.session.expire_all()
+        saved = User.query.filter_by(username='alice').first()
+        self.assertIsNone(saved.passkey_enrollment_token)
+        self.assertIsNone(saved.passkey_enrollment_expires_at)
+        self.assertEqual(len(saved.credentials), 1)
 
     def test_admin_can_delete_member_user_account(self):
         admin = User(username='admin')
