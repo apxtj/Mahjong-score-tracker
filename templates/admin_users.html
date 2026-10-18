@@ -30,12 +30,22 @@
     <thead>
       <tr>
         <th>ユーザー名</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>
       {% for user in users %}
       <tr>
         <td>{{ user.username }}</td>
+        <td>
+          {% if user.username != admin_username %}
+          <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('{{ user.username }} を削除しますか？');">
+            <button type="submit">削除</button>
+          </form>
+          {% else %}
+          管理者
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

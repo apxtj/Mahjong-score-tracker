@@ -90,6 +90,21 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertIn(b'challenge', response.data)
         self.assertIn(b'rp', response.data)
 
+    def test_admin_sees_user_management_link_after_login(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['login_user_id'] = admin.id
+            sess['login_is_admin'] = True
+
+        response = client.get('/results')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'/admin/users', response.data)
+
     def test_admin_can_create_member_user_account(self):
         admin = User(username='admin')
         db.session.add(admin)
@@ -98,11 +113,28 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         client = app.test_client()
         with client.session_transaction() as sess:
             sess['login_user_id'] = admin.id
+            sess['login_is_admin'] = True
 
         response = client.post('/admin/users', data={'username': 'alice'}, follow_redirects=False)
 
         self.assertEqual(response.status_code, 302)
         self.assertIsNotNone(User.query.filter_by(username='alice').first())
+
+    def test_admin_can_delete_member_user_account(self):
+        admin = User(username='admin')
+        member = User(username='alice')
+        db.session.add_all([admin, member])
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['login_user_id'] = admin.id
+            sess['login_is_admin'] = True
+
+        response = client.post(f'/admin/users/{member.id}/delete', follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(User.query.filter_by(username='alice').first())
 
 
 if __name__ == '__main__':

@@ -48,6 +48,9 @@ if cloudinary is not None and os.environ.get("CLOUDINARY_URL"):
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///mahjong.db")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
+with app.app_context():
+    db.create_all()
+
 migrate = Migrate(app, db)
 
 from auth import bp as auth_bp
@@ -86,7 +89,9 @@ def admin_required(f):
 
 @app.route("/logout")
 def logout():
-    session.pop("login_user_id", None)  # ログイン情報削除
+    session.pop("login_user_id", None)
+    session.pop("login_username", None)
+    session.pop("login_is_admin", None)
     return redirect(url_for("auth.login_page"))
 
 def recalc_total_scores():

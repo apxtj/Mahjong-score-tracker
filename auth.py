@@ -43,6 +43,7 @@ def _can_register_username(username):
 
 
 def ensure_default_admin_user():
+    db.create_all()
     admin_username = _get_default_admin_username()
     existing = User.query.filter_by(username=admin_username).first()
     if existing:
@@ -116,7 +117,29 @@ def admin_users():
         users=User.query.order_by(User.username.asc()).all(),
         error_message=error_message,
         message=request.args.get("message"),
+        admin_username=admin_username,
     )
+
+@bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+def admin_delete_user(user_id):
+    current_user_id = session.get("login_user_id")
+    if not current_user_id:
+        return redirect(url_for("auth.login_page"))
+
+    current_user = User.query.get(current_user_id)
+    admin_username = _get_default_admin_username()
+    if not current_user or current_user.username != admin_username:
+        return jsonify({"error": "Admin access required"}), 403
+
+    user = User.query.get_or_404(user_id)
+    if user.username == admin_username:
+        return redirect(url_for("auth.admin_users", message="管理者アカウントは削除できません。"))
+
+    for credential in list(user.credentials):
+        db.session.delete(credential)
+    db.session.delete(user)
+    db.session.commit()
+    return redirect(url_for("auth.admin_users", message=f"ユーザー '{user.username}' を削除しました。"))
 
 @bp.route("/login_start", methods=["POST"])
 def login_start():
@@ -291,6 +314,8 @@ def login_finish():
 
         # 認証が成功した場合に初めて login_user_id を設定（ログイン状態にする）
         session["login_user_id"] = user.id
+        session["login_username"] = user.username
+        session["login_is_admin"] = (user.username == _get_default_admin_username())
         # 認証用の一時データをクリア
         session.pop("auth_state", None)
         session.pop("auth_user_id", None)
