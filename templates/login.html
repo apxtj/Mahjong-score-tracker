@@ -156,6 +156,7 @@
 <div class="container">
   <h2>ログイン</h2>
   <p class="helper">ボタンを押して、端末の指紋/顔認証でログインします。</p>
+  <p class="helper">管理者としてログインする場合は、下の「うまくログインできない場合」から {{ default_admin_username }} を選んでください。</p>
 
   {% if registration_disabled %}
     <div class="notice">{{ registration_message }}</div>
@@ -174,9 +175,21 @@
 
   <details class="fallback">
     <summary>うまくログインできない場合（ユーザー名を指定）</summary>
+    {% if users %}
+    <div class="user-list" aria-label="登録済みユーザー一覧">
+      {% for user in users %}
+        <button type="button" class="user-option" data-username="{{ user.username }}">{{ user.username }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
     <form id="loginForm">
       <label for="username">ユーザー名</label>
-      <input type="text" id="username" placeholder="ユーザー名を入力" autocomplete="username" required>
+      <input type="text" id="username" list="userList" placeholder="ユーザー名を選択または入力" autocomplete="username" required>
+      <datalist id="userList">
+        {% for user in users %}
+          <option value="{{ user.username }}">{{ user.username }}</option>
+        {% endfor %}
+      </datalist>
       <button type="submit">このユーザーでログイン</button>
     </form>
   </details>

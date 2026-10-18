@@ -52,15 +52,73 @@ class UsabilityFeatureTests(unittest.TestCase):
 
     # --- ログイン（ユーザー名なし・ログイン保持） ---
 
-    def test_login_start_without_username_allows_any_registered_passkey(self):
-        client = app.test_client()
+    def _add_credential(self, user, credential_id):
+        db.session.add(Credential(user_id=user.id, credential_id=credential_id, public_key=b'pk'))
+        db.session.commit()
 
-        response = client.post('/login_start', json={})
+    def test_one_tap_login_offers_member_passkeys_but_not_admin(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        bob = User(username='bob')
+        db.session.add_all([admin, alice, bob])
+        db.session.commit()
+        self._add_credential(admin, b'cred-admin')
+        self._add_credential(alice, b'cred-alice')
+        self._add_credential(bob, b'cred-bob')
+
+        response = app.test_client().post('/login_start', json={})
 
         self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertEqual(payload['allowCredentials'], [])
-        self.assertIn('challenge', payload)
+        from fido2.utils import websafe_encode
+        offered = {c['id'] for c in response.get_json()['allowCredentials']}
+        self.assertEqual(offered, {websafe_encode(b'cred-alice'), websafe_encode(b'cred-bob')})
+
+    def test_one_tap_login_offers_admin_when_no_member_passkeys_exist(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+        self._add_credential(admin, b'cred-admin')
+
+        response = app.test_client().post('/login_start', json={})
+
+        from fido2.utils import websafe_encode
+        self.assertEqual(
+            [c['id'] for c in response.get_json()['allowCredentials']],
+            [websafe_encode(b'cred-admin')],
+        )
+
+    def test_one_tap_login_rejects_admin_passkey_when_members_exist(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        db.session.add_all([admin, alice])
+        db.session.commit()
+        self._add_credential(admin, b'cred-admin')
+        self._add_credential(alice, b'cred-alice')
+
+        client = app.test_client()
+        client.post('/login_start', json={})
+        response = self._finish_login(client, raw_id=b'cred-admin')
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_can_still_login_by_choosing_admin_username(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        db.session.add_all([admin, alice])
+        db.session.commit()
+        self._add_credential(admin, b'cred-admin')
+        self._add_credential(alice, b'cred-alice')
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            # login_start(username='admin') 後と同じセッション状態
+            sess['auth_state'] = {'challenge': 'x'}
+            sess['auth_user_id'] = admin.id
+        response = self._finish_login(client, raw_id=b'cred-admin')
+
+        self.assertEqual(response.get_json(), {'status': 'ok'})
+        with client.session_transaction() as sess:
+            self.assertTrue(sess['login_is_admin'])
 
     def _finish_login(self, client, raw_id=b'cred-alice'):
         fake_server = MagicMock()
@@ -112,6 +170,47 @@ class UsabilityFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         with client.session_transaction() as sess:
             self.assertNotIn('login_user_id', sess)
+
+    def test_register_start_requests_discoverable_passkey_in_webauthn_format(self):
+        client = app.test_client()
+
+        payload = client.post('/register_start', json={'username': 'admin'}).get_json()
+
+        self.assertEqual(payload['authenticatorSelection']['residentKey'], 'required')
+        self.assertTrue(payload['authenticatorSelection']['requireResidentKey'])
+        self.assertEqual(payload['attestation'], 'none')
+
+    def test_enrollment_url_allows_reregistering_user_with_existing_passkey(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        db.session.add_all([admin, alice])
+        db.session.flush()
+        db.session.add(Credential(user_id=alice.id, credential_id=b'old', public_key=b'pk'))
+        db.session.commit()
+
+        admin_client = app.test_client()
+        self._login(admin_client, admin, is_admin=True)
+        admin_client.post(f'/admin/users/{alice.id}/passkey')
+        token = db.session.get(User, alice.id).passkey_enrollment_token
+        self.assertIsNotNone(token)
+
+        client = app.test_client()
+        client.get(f'/enroll/{token}')
+        self.assertEqual(client.post('/register_start', json={}).status_code, 200)
+
+        # 登録URLなしでは、登録済みユーザーの Passkey は追加できない
+        self.assertEqual(app.test_client().post('/register_start', json={'username': 'alice'}).status_code, 403)
+
+    def test_admin_can_issue_enrollment_url_for_self(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+        client.post(f'/admin/users/{admin.id}/passkey')
+
+        self.assertIsNotNone(db.session.get(User, admin.id).passkey_enrollment_token)
 
     def test_login_page_shows_admin_setup_only_until_admin_registers(self):
         client = app.test_client()

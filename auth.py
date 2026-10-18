@@ -16,7 +16,7 @@ log_level = logging.DEBUG if debug_mode else logging.INFO
 logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
 
-from fido2.webauthn import PublicKeyCredentialRpEntity
+from fido2.webauthn import PublicKeyCredentialRpEntity, PublicKeyCredentialDescriptor
 import json
 
 bp = Blueprint("auth", __name__)
@@ -110,6 +110,7 @@ def login_page():
     ensure_default_admin_user()
     return render_template(
         "login.html",
+        users=User.query.order_by(User.username.asc()).all(),
         default_admin_username=_get_default_admin_username(),
         admin_needs_setup=_admin_needs_passkey_setup(),
     )
@@ -190,8 +191,6 @@ def admin_issue_passkey_registration(user_id):
         return jsonify({"error": "Admin access required"}), 403
 
     user = User.query.get_or_404(user_id)
-    if user.username == admin_username:
-        return redirect(url_for("auth.admin_users", message="管理者にはPasskey登録URLを発行できません。"))
 
     token = uuid4().hex
     user.passkey_enrollment_token = token
@@ -223,7 +222,7 @@ def admin_delete_user(user_id):
     return redirect(url_for("auth.admin_users", message=f"ユーザー '{user.username}' を削除しました。"))
 
 def _clear_auth_session():
-    for key in ("auth_state", "auth_user_id", "auth_rp_id"):
+    for key in ("auth_state", "auth_user_id", "auth_rp_id", "auth_members_only"):
         session.pop(key, None)
 
 
@@ -231,8 +230,10 @@ def _clear_auth_session():
 def login_start():
     """Passkey ログインを開始する。
 
-    username なし: 端末に保存された Passkey から選んでもらう（ワンタップログイン）
-    username あり: そのユーザーの Passkey に限定する（旧方式・予備）
+    username なし: 登録済みの全 Passkey（管理者分を除く）を候補に指定する（ワンタップログイン）。
+        端末に保存されない形式の古い Passkey も、IDを指定すれば端末が応答できる。
+        同じ端末に管理者と通常ユーザーの Passkey がある場合は、通常ユーザーとしてログインさせる。
+    username あり: そのユーザーの Passkey に限定する（管理者ログイン・予備）
     """
     try:
         payload = request.get_json(silent=True) or {}
@@ -250,6 +251,18 @@ def login_start():
             if not user.credentials:
                 return jsonify({"error": "No credential registered"}), 400
             allow_credentials = [AttestedCredentialData(c.public_key) for c in user.credentials]
+        else:
+            admin_user = User.query.filter_by(username=_get_default_admin_username()).first()
+            member_credentials = Credential.query.filter(
+                Credential.user_id != (admin_user.id if admin_user else -1)
+            ).all()
+            # 通常ユーザーの Passkey がまだ1件もない間は、管理者の Passkey も候補に入れる
+            candidates = member_credentials or Credential.query.all()
+            if not candidates:
+                return jsonify({"error": "No credential registered"}), 400
+            allow_credentials = [
+                PublicKeyCredentialDescriptor(type="public-key", id=c.credential_id) for c in candidates
+            ]
 
         options, state = request_server.authenticate_begin(
             allow_credentials,
@@ -262,6 +275,9 @@ def login_start():
         if user:
             # ユーザー指定時は、そのユーザーの Passkey 以外を受け付けない
             session["auth_user_id"] = user.id
+        elif member_credentials:
+            # ワンタップ時に管理者の Passkey は候補に入れていないので、返ってきても受け付けない
+            session["auth_members_only"] = True
 
         pk = options.public_key
         return jsonify({
@@ -297,6 +313,8 @@ def login_finish():
         expected_user_id = session.get("auth_user_id")
         if expected_user_id and cred_record.user_id != expected_user_id:
             raise ValueError("Credential does not belong to the requested user")
+        if session.get("auth_members_only") and cred_record.user.username == _get_default_admin_username():
+            raise ValueError("Admin passkey was not offered for one-tap login")
 
         user = cred_record.user
         cred_data = AttestedCredentialData(cred_record.public_key)
@@ -402,7 +420,8 @@ def register_start():
             }), 403
 
         user = User.query.filter_by(username=username).first()
-        if user and user.credentials:
+        # 管理者が発行した登録URL経由なら、登録済みでも Passkey を追加・登録し直しできる
+        if user and user.credentials and not admin_enrollment:
             return jsonify({"error": "This user already has a passkey registered"}), 400
 
         session["register_username"] = username
@@ -447,8 +466,14 @@ def register_start():
             "pubKeyCredParams": [
                 {"type": p.type, "alg": p.alg} for p in pk.pub_key_cred_params
             ],
-            "authenticatorSelection": pk.authenticator_selection,
-            "attestation": pk.attestation,
+            # ブラウザ(WebAuthn)が読むのは camelCase のキー。
+            # snake_case のまま渡すと residentKey が無視され、ユーザー名なしログインで見つからない Passkey になる
+            "authenticatorSelection": {
+                "residentKey": "required",
+                "requireResidentKey": True,
+                "userVerification": "preferred",
+            },
+            "attestation": "none",
         }
 
         return jsonify(response)
@@ -506,7 +531,7 @@ def register_finish():
             db.session.add(user)
             db.session.flush()
             logger.debug("User created with id: %d", user.id)
-        elif user.credentials:
+        elif user.credentials and not session.get("allow_admin_enrollment"):
             return jsonify({"error": "This user already has a passkey registered"}), 400
 
         cred = Credential(

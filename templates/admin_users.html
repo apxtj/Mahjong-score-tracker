@@ -178,13 +178,10 @@
             </form>
           </td>
           <td>
-            {% if user.username != admin_username %}
             <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}" id="issue-passkey-form-{{ user.id }}">
-              <button type="submit">登録URL発行</button>
+              <button type="submit">{{ '再登録URL発行' if user.credentials else '登録URL発行' }}</button>
             </form>
-            {% else %}
-            <span class="admin-badge">管理者</span>
-            {% endif %}
+            {% if user.credentials %}<small class="admin-badge">登録済み {{ user.credentials|length }} 件</small>{% endif %}
           </td>
           <td>
             {% if user.username != admin_username %}

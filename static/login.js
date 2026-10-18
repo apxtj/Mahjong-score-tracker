@@ -112,7 +112,11 @@ async function loginWithPasskey(username, errorDiv) {
                 await registerAdminPasskey(username, errorDiv);
                 return;
             }
-            errorDiv.textContent = options.error === "User not found" ? "ユーザーが見つかりません。" : options.error;
+            const messages = {
+                "User not found": "ユーザーが見つかりません。",
+                "No credential registered": "Passkey が登録されていません。管理者から届いた登録URLで登録してください。",
+            };
+            errorDiv.textContent = messages[options.error] || options.error;
             return;
         }
 
@@ -180,6 +184,16 @@ if (adminSetupButton) {
         registerAdminPasskey(DEFAULT_ADMIN_USERNAME, errorDiv);
     });
 }
+
+// 候補のユーザー名をタップすると入力欄に入る
+document.querySelectorAll(".user-option").forEach((button) => {
+    button.addEventListener("click", () => {
+        document.querySelectorAll(".user-option").forEach((b) => b.classList.remove("selected"));
+        button.classList.add("selected");
+        document.getElementById("username").value = button.dataset.username;
+        errorDiv.textContent = "";
+    });
+});
 
 document.getElementById("loginForm").addEventListener("submit", (e) => {
     e.preventDefault();

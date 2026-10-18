@@ -59,7 +59,7 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn('/login', response.headers.get('Location', ''))
 
-    def test_login_page_does_not_list_registered_users(self):
+    def test_login_page_lists_registered_users_in_fallback_section(self):
         db.session.add_all([
             User(username='alice'),
             User(username='bob'),
@@ -67,12 +67,14 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         db.session.commit()
 
         client = app.test_client()
-        response = client.get('/login')
+        html = client.get('/login').data.decode('utf-8')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn(b'alice', response.data)
-        self.assertNotIn(b'bob', response.data)
-        self.assertIn('Passkey でログイン', response.data.decode('utf-8'))
+        self.assertIn('Passkey でログイン', html)
+        # 候補は「うまくログインできない場合」を開いた中にだけ表示される
+        fallback = html[html.index('<details class="fallback">'):html.index('</details>')]
+        self.assertIn('data-username="alice"', fallback)
+        self.assertIn('data-username="bob"', fallback)
+        self.assertNotIn('data-username="alice"', html.replace(fallback, ''))
 
     def test_login_page_has_no_public_registration_link(self):
         client = app.test_client()
