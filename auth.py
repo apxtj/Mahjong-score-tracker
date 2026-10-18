@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session, render_template, redirect, url_for
 import logging
 from urllib.parse import urlparse
+from uuid import uuid4
 from fido2.server import Fido2Server,AuthenticationResponse
 from fido2.webauthn import PublicKeyCredentialRequestOptions, AttestedCredentialData, CollectedClientData, AuthenticatorData, AuthenticatorAssertionResponse, AuthenticationResponse as AuthenticationResponseWA
 from fido2.utils import websafe_encode, websafe_decode
@@ -119,6 +120,29 @@ def admin_users():
         message=request.args.get("message"),
         admin_username=admin_username,
     )
+
+@bp.route("/admin/users/<int:user_id>/passkey", methods=["POST"])
+def admin_issue_passkey_registration(user_id):
+    current_user_id = session.get("login_user_id")
+    if not current_user_id:
+        return redirect(url_for("auth.login_page"))
+
+    current_user = User.query.get(current_user_id)
+    admin_username = _get_default_admin_username()
+    if not current_user or current_user.username != admin_username:
+        return jsonify({"error": "Admin access required"}), 403
+
+    user = User.query.get_or_404(user_id)
+    if user.username == admin_username:
+        return redirect(url_for("auth.admin_users", message="管理者にはPasskey登録URLを発行できません。"))
+
+    token = uuid4().hex
+    user.passkey_enrollment_token = token
+    user.passkey_enrollment_expires_at = datetime.utcnow() + timedelta(hours=24)
+    db.session.commit()
+
+    url = url_for("auth.enroll_user_passkey", token=token, _external=True)
+    return redirect(url_for("auth.admin_users", message=f"{user.username} の登録URL: {url}"))
 
 @bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 def admin_delete_user(user_id):
@@ -349,6 +373,20 @@ def register_page():
         )
     return render_template("register.html")
 
+@bp.route("/enroll/<token>")
+def enroll_user_passkey(token):
+    user = User.query.filter_by(passkey_enrollment_token=token).first()
+    if not user:
+        return jsonify({"error": "Invalid or expired enrollment token"}), 400
+
+    if user.passkey_enrollment_expires_at and user.passkey_enrollment_expires_at < datetime.utcnow():
+        return jsonify({"error": "Enrollment token expired"}), 400
+
+    session["register_username"] = user.username
+    session["enrollment_token"] = token
+    session["allow_admin_enrollment"] = True
+    return render_template("register.html")
+
 @bp.route("/register_start", methods=["POST"])
 def register_start():
     try:
@@ -356,7 +394,8 @@ def register_start():
         if not username:
             return jsonify({"error": "Username required"}), 400
 
-        if not _can_register_username(username):
+        admin_enrollment = session.get("allow_admin_enrollment")
+        if not _public_registration_enabled() and not admin_enrollment and not _can_register_username(username):
             return jsonify({
                 "error": "Public registration is disabled. Please ask an administrator to create your account."
             }), 403
@@ -473,6 +512,11 @@ def register_finish():
 
         session.pop("register_state", None)
         session.pop("register_username", None)
+        session.pop("allow_admin_enrollment", None)
+        session.pop("enrollment_token", None)
+        if user.passkey_enrollment_token:
+            user.passkey_enrollment_token = None
+            user.passkey_enrollment_expires_at = None
         logger.debug("Session cleared after registration")
 
         return jsonify({"status": "ok"})

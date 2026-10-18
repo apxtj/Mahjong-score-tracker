@@ -6,6 +6,8 @@ db = SQLAlchemy()
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
+    passkey_enrollment_token = db.Column(db.String(128), unique=True, nullable=True)
+    passkey_enrollment_expires_at = db.Column(db.DateTime, nullable=True)
 
     credentials = db.relationship("Credential", backref="user", lazy=True)
 

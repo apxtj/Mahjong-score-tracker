@@ -30,6 +30,7 @@
     <thead>
       <tr>
         <th>ユーザー名</th>
+        <th>Passkey登録</th>
         <th>操作</th>
       </tr>
     </thead>
@@ -37,6 +38,15 @@
       {% for user in users %}
       <tr>
         <td>{{ user.username }}</td>
+        <td>
+          {% if user.username != admin_username %}
+          <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}">
+            <button type="submit">登録URL発行</button>
+          </form>
+          {% else %}
+          管理者
+          {% endif %}
+        </td>
         <td>
           {% if user.username != admin_username %}
           <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('{{ user.username }} を削除しますか？');">
