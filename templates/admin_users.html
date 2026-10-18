@@ -4,64 +4,195 @@
   <meta charset="UTF-8">
   <title>ユーザー管理</title>
   <style>
-    body { font-family: sans-serif; margin: 2em; }
-    form { margin: 1em 0; }
-    input { padding: 0.5em; width: 220px; }
-    button { padding: 0.5em 1em; }
-    .error { color: red; margin-bottom: 1em; }
-    .success { color: green; margin-bottom: 1em; }
-    table { border-collapse: collapse; width: 400px; }
-    th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --border: #dfe6f1;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success-bg: #ecfdf5;
+      --success-text: #166534;
+      --error-bg: #fef2f2;
+      --error-text: #b91c1c;
+      --shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 20px;
+      font-family: sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 24px 28px;
+    }
+    h2, h3 {
+      margin-top: 0;
+    }
+    .panel {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 16px;
+      margin-bottom: 22px;
+    }
+    form { margin: 0; }
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    input {
+      padding: 0.7em 0.8em;
+      width: min(260px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    button {
+      padding: 0.8em 1.1em;
+      border: none;
+      border-radius: 8px;
+      background: var(--primary);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    button:hover { background: var(--primary-dark); }
+    .danger {
+      background: #ef4444;
+    }
+    .danger:hover { background: #dc2626; }
+    .muted {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 10px;
+      margin-bottom: 0;
+    }
+    .error, .success {
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+      font-size: 0.96rem;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .error {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid #fecaca;
+    }
+    .success {
+      background: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid #bbf7d0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 640px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.8em 0.75em;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f8fafc;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    .inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .admin-badge {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
-  <h2>ユーザー管理</h2>
-  {% if message %}<div class="success" id="admin-message" data-message="{{ message }}">{{ message }}</div>{% endif %}
-  {% if error_message %}<div class="error">{{ error_message }}</div>{% endif %}
+  <div class="container">
+    <h2>ユーザー管理</h2>
 
-  <form method="post">
-    <label for="username">新規ユーザー名</label><br>
-    <input id="username" name="username" placeholder="例: taro" required>
-    <button type="submit">ユーザー作成</button>
-  </form>
+    {% if message %}<div class="success" id="admin-message" data-message="{{ message }}">{{ message }}</div>{% endif %}
+    {% if error_message %}<div class="error">{{ error_message }}</div>{% endif %}
 
-  <h3>登録済みユーザー</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>ユーザー名</th>
-        <th>Passkey登録</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for user in users %}
-      <tr>
-        <td>{{ user.username }}</td>
-        <td>
-          {% if user.username != admin_username %}
-          <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}" id="issue-passkey-form-{{ user.id }}">
-            <button type="submit">登録URL発行</button>
-          </form>
-          {% else %}
-          管理者
-          {% endif %}
-        </td>
-        <td>
-          {% if user.username != admin_username %}
-          <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('{{ user.username }} を削除しますか？');">
-            <button type="submit">削除</button>
-          </form>
-          {% else %}
-          管理者
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <div class="panel">
+      <form method="post">
+        <label for="username"><strong>新規ユーザー名</strong></label><br><br>
+        <div class="field-row">
+          <input id="username" name="username" placeholder="例: taro" required>
+          <button type="submit">ユーザー作成</button>
+        </div>
+      </form>
+    </div>
 
-  <p><a href="{{ url_for('auth.login_page') }}">ログイン画面へ戻る</a></p>
+    <h3>登録済みユーザー</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ユーザー名</th>
+            <th>Passkey登録</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>{{ user.username }}</td>
+            <td>
+              {% if user.username != admin_username %}
+              <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}" id="issue-passkey-form-{{ user.id }}">
+                <button type="submit">登録URL発行</button>
+              </form>
+              {% else %}
+              <span class="admin-badge">管理者</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if user.username != admin_username %}
+              <div class="inline-actions">
+                <form method="post" action="{{ url_for('auth.admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('{{ user.username }} を削除しますか？');">
+                  <button type="submit" class="danger">削除</button>
+                </form>
+              </div>
+              {% else %}
+              <span class="admin-badge">管理者</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="muted"><a href="{{ url_for('auth.login_page') }}">ログイン画面へ戻る</a></p>
+  </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', function () {
