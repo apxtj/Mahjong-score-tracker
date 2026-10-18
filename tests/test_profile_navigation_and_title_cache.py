@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from app import app, db, Player, Title, User, build_player_navigation, get_unlocked_title_ids
 
@@ -105,6 +106,12 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'/admin/users', response.data)
 
+    def test_schema_sql_includes_passkey_enrollment_columns(self):
+        schema_sql = Path('db/schema.sql').read_text(encoding='utf-8')
+
+        self.assertIn('passkey_enrollment_token', schema_sql)
+        self.assertIn('passkey_enrollment_expires_at', schema_sql)
+
     def test_admin_can_create_member_user_account(self):
         admin = User(username='admin')
         db.session.add(admin)
@@ -119,6 +126,22 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIsNotNone(User.query.filter_by(username='alice').first())
+
+    def test_admin_can_issue_passkey_enrollment_url(self):
+        admin = User(username='admin')
+        member = User(username='alice')
+        db.session.add_all([admin, member])
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['login_user_id'] = admin.id
+            sess['login_is_admin'] = True
+
+        response = client.post(f'/admin/users/{member.id}/passkey', follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(User.query.get(member.id).passkey_enrollment_token)
 
     def test_admin_can_delete_member_user_account(self):
         admin = User(username='admin')
