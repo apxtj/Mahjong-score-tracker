@@ -4,10 +4,15 @@
 <meta charset="UTF-8">
 <title>登録</title>
 </head>
-<body>
+<body data-username="{{ username or '' }}" data-enrollment-mode="{{ 'true' if enrollment_mode else 'false' }}">
 <h2>ユーザー登録</h2>
+{% if enrollment_mode %}
+<p>{{ username }} の Passkey を登録します。</p>
+{% endif %}
 <form id="registerForm">
+  {% if not enrollment_mode %}
   <input type="text" id="username" placeholder="ユーザー名" required>
+  {% endif %}
   <button type="submit">登録</button>
 </form>
 <div id="error"></div>
@@ -29,7 +34,7 @@ async function arrayBufferToBase64(buffer) {
 
 document.getElementById("registerForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = document.getElementById("username").value.trim();
+    const username = document.body.dataset.username || document.getElementById("username")?.value?.trim() || "";
     const errorDiv = document.getElementById("error");
     errorDiv.textContent = "";
 
@@ -37,7 +42,7 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
         const startResp = await fetch("/register_start", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({username})
+            body: JSON.stringify({ username })
         });
         const options = await startResp.json();
         if (options.error) { errorDiv.textContent = options.error; return; }

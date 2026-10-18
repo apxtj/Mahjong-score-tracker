@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from app import app, db, Player, Title, User, build_player_navigation, get_unlocked_title_ids
@@ -142,6 +143,26 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIsNotNone(User.query.get(member.id).passkey_enrollment_token)
+
+    def test_enrollment_flow_uses_session_username_without_form_input(self):
+        user = User(username='alice')
+        db.session.add(user)
+        db.session.commit()
+
+        token = 'demo-token'
+        user.passkey_enrollment_token = token
+        user.passkey_enrollment_expires_at = datetime.utcnow() + timedelta(hours=1)
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['register_username'] = 'alice'
+            sess['allow_admin_enrollment'] = True
+
+        response = client.post('/register_start', json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'challenge', response.data)
 
     def test_admin_can_delete_member_user_account(self):
         admin = User(username='admin')

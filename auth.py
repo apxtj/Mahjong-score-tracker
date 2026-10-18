@@ -143,7 +143,7 @@ def admin_issue_passkey_registration(user_id):
     db.session.commit()
 
     url = url_for("auth.enroll_user_passkey", token=token, _external=True)
-    return redirect(url_for("auth.admin_users", message=f"{user.username} の登録URL: {url}"))
+    return redirect(url)
 
 @bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 def admin_delete_user(user_id):
@@ -372,7 +372,7 @@ def register_page():
             ),
             403,
         )
-    return render_template("register.html")
+    return render_template("register.html", username=None, enrollment_mode=False)
 
 @bp.route("/enroll/<token>")
 def enroll_user_passkey(token):
@@ -386,12 +386,15 @@ def enroll_user_passkey(token):
     session["register_username"] = user.username
     session["enrollment_token"] = token
     session["allow_admin_enrollment"] = True
-    return render_template("register.html")
+    return render_template("register.html", username=user.username, enrollment_mode=True)
 
 @bp.route("/register_start", methods=["POST"])
 def register_start():
     try:
-        username = (request.json.get("username") or "").strip()
+        username = (request.json.get("username") or "").strip() if request.is_json and request.json else ""
+        session_username = (session.get("register_username") or "").strip()
+        if not username and session_username:
+            username = session_username
         if not username:
             return jsonify({"error": "Username required"}), 400
 
