@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, render_template
+from flask import Blueprint, request, jsonify, session, render_template, redirect, url_for
 import logging
 from urllib.parse import urlparse
 from fido2.server import Fido2Server,AuthenticationResponse
@@ -18,6 +18,42 @@ from fido2.webauthn import PublicKeyCredentialRpEntity
 import json
 
 bp = Blueprint("auth", __name__)
+
+
+def _public_registration_enabled():
+    return str(os.environ.get("ALLOW_PUBLIC_REGISTRATION", "False")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def _get_default_admin_username():
+    return os.environ.get("ADMIN_USERNAME", "admin")
+
+
+def _can_register_username(username):
+    if _public_registration_enabled():
+        return True
+
+    admin_username = _get_default_admin_username()
+    if not username or username.lower() != admin_username.lower():
+        return False
+
+    user = User.query.filter_by(username=admin_username).first()
+    return user is None or not user.credentials
+
+
+def ensure_default_admin_user():
+    admin_username = _get_default_admin_username()
+    existing = User.query.filter_by(username=admin_username).first()
+    if existing:
+        return existing
+
+    admin_user = User(username=admin_username)
+    db.session.add(admin_user)
+    db.session.commit()
+    logger.info("Created default admin user: %s", admin_username)
+    return admin_user
+
 
 def _resolve_origin():
     return os.environ.get("ORIGIN") or os.environ.get("APP_URL") or "http://localhost:5000"
@@ -42,8 +78,45 @@ server = Fido2Server(rp)
 
 @bp.route("/login")
 def login_page():
+    ensure_default_admin_user()
     users = User.query.order_by(User.username.asc()).all()
-    return render_template("login.html", users=users)
+    return render_template(
+        "login.html",
+        users=users,
+        default_admin_username=_get_default_admin_username(),
+    )
+
+@bp.route("/admin/users", methods=["GET", "POST"])
+def admin_users():
+    current_user_id = session.get("login_user_id")
+    if not current_user_id:
+        return redirect(url_for("auth.login_page"))
+
+    current_user = User.query.get(current_user_id)
+    admin_username = _get_default_admin_username()
+    if not current_user or current_user.username != admin_username:
+        return jsonify({"error": "Admin access required"}), 403
+
+    error_message = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        if not username:
+            error_message = "ユーザー名を入力してください。"
+        elif username.lower() == admin_username.lower():
+            error_message = "管理者アカウントは追加できません。"
+        elif User.query.filter_by(username=username).first():
+            error_message = "そのユーザー名はすでに存在します。"
+        else:
+            db.session.add(User(username=username))
+            db.session.commit()
+            return redirect(url_for("auth.admin_users", message=f"ユーザー '{username}' を作成しました。"))
+
+    return render_template(
+        "admin_users.html",
+        users=User.query.order_by(User.username.asc()).all(),
+        error_message=error_message,
+        message=request.args.get("message"),
+    )
 
 @bp.route("/login_start", methods=["POST"])
 def login_start():
@@ -238,28 +311,39 @@ def login_finish():
 #以下デバッグ用登録処理
 @bp.route("/register")
 def register_page():
+    if not _public_registration_enabled():
+        return (
+            render_template(
+                "login.html",
+                users=User.query.order_by(User.username.asc()).all(),
+                registration_disabled=True,
+                registration_message="新規ユーザー登録は管理者が承認したユーザーのみです。ログイン画面で登録済みユーザーを選択してください。",
+                default_admin_username=_get_default_admin_username(),
+            ),
+            403,
+        )
     return render_template("register.html")
 
 @bp.route("/register_start", methods=["POST"])
 def register_start():
     try:
-        username = request.json.get("username")
+        username = (request.json.get("username") or "").strip()
         if not username:
             return jsonify({"error": "Username required"}), 400
 
-        # 既に登録済みかチェック
-        user = User.query.filter_by(username=username).first()
-        if user:
-            return jsonify({"error": "Username already exists"}), 400
+        if not _can_register_username(username):
+            return jsonify({
+                "error": "Public registration is disabled. Please ask an administrator to create your account."
+            }), 403
 
-        # ユーザーを DB に保存せず、セッションに仮保存
-        # register_finish で credential 作成成功後に初めて DB に保存
+        user = User.query.filter_by(username=username).first()
+        if user and user.credentials:
+            return jsonify({"error": "This user already has a passkey registered"}), 400
+
         session["register_username"] = username
-        
-        # FIDO2 サーバーにユーザー情報を渡す
-        # 仮の user_id として username のハッシュを使用
-        user_id_bytes = username.encode("utf-8")
-        
+
+        user_id_bytes = str(user.id if user else username).encode("utf-8") if user else username.encode("utf-8")
+
         options, state = server.register_begin(
             user={
                 "id": user_id_bytes,
@@ -320,50 +404,48 @@ def register_finish():
 
         data = request.json
 
-        # base64urlデコード
         decoded_raw_id = base64url_decode(data["id"])
-        
+
         logger.debug("=== register_finish start ===")
         logger.debug("Username: %s", username)
-        
-        # register_complete 呼び出し
+
         credential = server.register_complete(
             session["register_state"],
             {
-                "id": decoded_raw_id,  # id をデコードしてバイト列に変換
-                "rawId": websafe_decode(data["rawId"]),  # rawId はデコードしてバイト列に
+                "id": decoded_raw_id,
+                "rawId": websafe_decode(data["rawId"]),
                 "response": {
                     "clientDataJSON": websafe_decode(data["clientDataJSON"]),
                     "attestationObject": websafe_decode(data["attestationObject"]),
                 },
             }
         )
-        
+
         logger.debug("register_complete succeeded")
-        
-        # ここまできたら、credential が返ってきているはず
+
         cred_data = credential.credential_data
         logger.debug("credential_id (hex): %s", cred_data.credential_id.hex())
         logger.debug("credential_id (len): %d bytes", len(cred_data.credential_id))
 
-        # credential 作成成功後に初めてユーザーを作成
-        user = User(username=username)
-        db.session.add(user)
-        db.session.flush()  # ID を生成させるが、コミットはまだ
-        logger.debug("User created with id: %d", user.id)
-        
-        # 公開鍵をバイト列として保存
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            user = User(username=username)
+            db.session.add(user)
+            db.session.flush()
+            logger.debug("User created with id: %d", user.id)
+        elif user.credentials:
+            return jsonify({"error": "This user already has a passkey registered"}), 400
+
         cred = Credential(
             user_id=user.id,
             credential_id=cred_data.credential_id,
-            public_key=bytes(cred_data),  # AttestedCredentialDataのバイト表現をそのまま保存
+            public_key=bytes(cred_data),
             sign_count=credential.counter,
         )
         db.session.add(cred)
         db.session.commit()
         logger.debug("Credential saved successfully")
 
-        # セッションをクリア
         session.pop("register_state", None)
         session.pop("register_username", None)
         logger.debug("Session cleared after registration")
@@ -371,7 +453,6 @@ def register_finish():
         return jsonify({"status": "ok"})
 
     except Exception as e:
-        # エラー時はロールバック（User と Credential が保存されない）
         db.session.rollback()
         logger.exception("register_finish failed")
         return jsonify({"error": "Registration failed"}), 400

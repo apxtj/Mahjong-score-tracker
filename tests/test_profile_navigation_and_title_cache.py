@@ -66,6 +66,44 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         self.assertIn(b'alice', response.data)
         self.assertIn(b'bob', response.data)
 
+    def test_public_registration_is_disabled_by_default(self):
+        client = app.test_client()
+
+        response = client.get('/register')
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_user_is_available_as_default_admin_account(self):
+        client = app.test_client()
+
+        response = client.get('/login')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'admin', response.data)
+
+    def test_admin_can_register_passkey_without_public_registration(self):
+        client = app.test_client()
+
+        response = client.post('/register_start', json={'username': 'admin'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'challenge', response.data)
+        self.assertIn(b'rp', response.data)
+
+    def test_admin_can_create_member_user_account(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['login_user_id'] = admin.id
+
+        response = client.post('/admin/users', data={'username': 'alice'}, follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(User.query.filter_by(username='alice').first())
+
 
 if __name__ == '__main__':
     unittest.main()

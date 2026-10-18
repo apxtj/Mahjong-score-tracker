@@ -15,8 +15,15 @@
 </style>
 </head>
 <body>
+<script>
+  window.DEFAULT_ADMIN_USERNAME = {{ default_admin_username|tojson }};
+</script>
 <h2>ログイン</h2>
 <p class="helper">ユーザーを選んで、端末の指紋/顔認証でログインします。</p>
+<p class="helper">管理者アカウントは初回に Passkey を登録してから使えます。</p>
+{% if registration_disabled %}
+  <p style="color: #8a3b12; font-weight: 600;">{{ registration_message }}</p>
+{% endif %}
 
 {% if users %}
 <div class="user-list" aria-label="登録済みユーザー一覧">

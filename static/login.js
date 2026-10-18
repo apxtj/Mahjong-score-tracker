@@ -29,8 +29,68 @@ async function arrayBufferToBase64(buffer) {
 }
 
 
+const DEFAULT_ADMIN_USERNAME = window.DEFAULT_ADMIN_USERNAME || 'admin';
 const userButtons = document.querySelectorAll('.user-option');
 const usernameInput = document.getElementById('username');
+
+async function registerAdminPasskey(username, errorDiv) {
+    errorDiv.textContent = "管理者の Passkey を初回登録しています...";
+
+    try {
+        const startResp = await fetch("/register_start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username })
+        });
+        const options = await startResp.json();
+        if (options.error) {
+            errorDiv.textContent = options.error;
+            return false;
+        }
+
+        const publicKey = {
+            challenge: await base64ToArrayBuffer(options.challenge),
+            rp: options.rp,
+            user: {
+                id: await base64ToArrayBuffer(options.user.id),
+                name: options.user.name,
+                displayName: options.user.displayName,
+            },
+            pubKeyCredParams: options.pubKeyCredParams,
+            authenticatorSelection: options.authenticatorSelection,
+            attestation: options.attestation,
+            timeout: options.timeout,
+        };
+
+        const cred = await navigator.credentials.create({ publicKey });
+        const data = {
+            id: cred.id,
+            rawId: await arrayBufferToBase64(cred.rawId),
+            attestationObject: await arrayBufferToBase64(cred.response.attestationObject),
+            clientDataJSON: await arrayBufferToBase64(cred.response.clientDataJSON)
+        };
+
+        const finishResp = await fetch("/register_finish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        const result = await finishResp.json();
+
+        if (result.status === "ok") {
+            alert("管理者の Passkey を登録しました。ログインしてください。");
+            window.location.reload();
+            return true;
+        }
+
+        errorDiv.textContent = "Passkey 登録に失敗しました: " + (result.error || "不明なエラー");
+        return false;
+    } catch (err) {
+        console.error(err);
+        errorDiv.textContent = "Passkey 登録エラー: " + err;
+        return false;
+    }
+}
 
 userButtons.forEach((button) => {
     button.addEventListener('click', () => {
@@ -63,6 +123,10 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
         const options = await startResp.json();
 
         if (options.error) {
+            if (username === DEFAULT_ADMIN_USERNAME && options.error.includes("No credential registered")) {
+                await registerAdminPasskey(username, errorDiv);
+                return;
+            }
             errorDiv.textContent = options.error;
             return;
         }
