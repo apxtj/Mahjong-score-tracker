@@ -1,6 +1,6 @@
 import unittest
 
-from app import app, db, Player, Title, build_player_navigation, get_unlocked_title_ids
+from app import app, db, Player, Title, User, build_player_navigation, get_unlocked_title_ids
 
 
 class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
@@ -43,6 +43,28 @@ class ProfileNavigationAndTitleCacheTests(unittest.TestCase):
         unlocked = get_unlocked_title_ids(player)
 
         self.assertIn(title.id, unlocked)
+
+    def test_results_page_redirects_to_login_when_not_authenticated(self):
+        client = app.test_client()
+
+        response = client.get('/results')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login', response.headers.get('Location', ''))
+
+    def test_login_page_lists_registered_users(self):
+        db.session.add_all([
+            User(username='alice'),
+            User(username='bob'),
+        ])
+        db.session.commit()
+
+        client = app.test_client()
+        response = client.get('/login')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'alice', response.data)
+        self.assertIn(b'bob', response.data)
 
 
 if __name__ == '__main__':

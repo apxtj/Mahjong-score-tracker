@@ -29,14 +29,27 @@ async function arrayBufferToBase64(buffer) {
 }
 
 
+const userButtons = document.querySelectorAll('.user-option');
+const usernameInput = document.getElementById('username');
+
+userButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        const username = button.dataset.username;
+        usernameInput.value = username;
+        usernameInput.focus();
+        const errorDiv = document.getElementById('error');
+        if (errorDiv) errorDiv.textContent = '';
+    });
+});
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = document.getElementById("username").value.trim();
+    const username = usernameInput.value.trim();
     const errorDiv = document.getElementById("error");
     errorDiv.textContent = "";
 
     if (!username) {
-        errorDiv.textContent = "ユーザー名を入力してください";
+        errorDiv.textContent = "ユーザー名を選択してください";
         return;
     }
 

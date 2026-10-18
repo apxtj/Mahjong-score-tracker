@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session, render_template
 import logging
+from urllib.parse import urlparse
 from fido2.server import Fido2Server,AuthenticationResponse
 from fido2.webauthn import PublicKeyCredentialRequestOptions, AttestedCredentialData, CollectedClientData, AuthenticatorData, AuthenticatorAssertionResponse, AuthenticationResponse as AuthenticationResponseWA
 from fido2.utils import websafe_encode, websafe_decode
@@ -18,17 +19,31 @@ import json
 
 bp = Blueprint("auth", __name__)
 
-# RP (Relying Party) and origin should be configurable for production
-# Use environment variables when deployed (Render), otherwise keep localhost defaults
-RP_ID = os.environ.get("RP_ID", "localhost")
-ORIGIN = os.environ.get("ORIGIN", "http://localhost:5000")
+def _resolve_origin():
+    return os.environ.get("ORIGIN") or os.environ.get("APP_URL") or "http://localhost:5000"
+
+
+def _resolve_rp_id():
+    rp_id = os.environ.get("RP_ID")
+    if rp_id:
+        return rp_id
+    origin = _resolve_origin()
+    parsed = urlparse(origin)
+    return parsed.hostname or "localhost"
+
+
+# RP (Relying Party) and origin should be configurable for production.
+# Set ORIGIN / APP_URL / RP_ID in the deployment environment; localhost is only for local development.
+RP_ID = _resolve_rp_id()
+ORIGIN = _resolve_origin()
 
 rp = PublicKeyCredentialRpEntity(id=RP_ID, name=os.environ.get("RP_NAME", "Mahjong App"))
 server = Fido2Server(rp)
 
 @bp.route("/login")
 def login_page():
-    return render_template("login.html")
+    users = User.query.order_by(User.username.asc()).all()
+    return render_template("login.html", users=users)
 
 @bp.route("/login_start", methods=["POST"])
 def login_start():
