@@ -62,6 +62,10 @@ _ADDED_COLUMNS = {
         ("passkey_enrollment_expires_at", "TIMESTAMP"),
         ("player_id", "INTEGER"),
     ],
+    "credential": [
+        ("created_at", "TIMESTAMP"),
+        ("last_used_at", "TIMESTAMP"),
+    ],
 }
 
 
@@ -102,6 +106,14 @@ def inject_current_player():
         return {"my_player_id": None}
     user = db.session.get(User, user_id)
     return {"my_player_id": user.player_id if user else None}
+
+
+@app.template_filter("jst")
+def format_jst(value):
+    """DBのUTC日時を日本時間で表示する（記録がない場合は「不明」）"""
+    if not value:
+        return "不明"
+    return (value + timedelta(hours=9)).strftime("%Y/%m/%d %H:%M")
 
 
 def _current_user():

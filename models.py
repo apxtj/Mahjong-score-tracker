@@ -41,6 +41,9 @@ class Credential(db.Model):
     credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
     public_key = db.Column(db.LargeBinary, nullable=False)
     sign_count = db.Column(db.Integer, default=0)
+    # 既存の Passkey は記録がないため NULL（＝不明）
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
+    last_used_at = db.Column(db.DateTime, nullable=True)
 
 # プレイヤー（船籍）モデル
 class Player(db.Model):

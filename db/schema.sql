@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS public.player_title_achievement (
 -- ログインユーザーとプレイヤーの紐付け（既存DBにも追加できるよう ALTER で定義）
 ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS player_id integer REFERENCES public.player(id);
 
+-- Passkey の登録日時・最終使用日時（既存の Passkey は NULL）
+ALTER TABLE public.credential ADD COLUMN IF NOT EXISTS created_at timestamp without time zone;
+ALTER TABLE public.credential ADD COLUMN IF NOT EXISTS last_used_at timestamp without time zone;
+
 -- 対局ルール（オカ・ウマ）などの共通設定
 CREATE TABLE IF NOT EXISTS public.app_setting (
     key varchar(50) PRIMARY KEY,

@@ -221,6 +221,25 @@ def admin_delete_user(user_id):
     db.session.commit()
     return redirect(url_for("auth.admin_users", message=f"ユーザー '{user.username}' を削除しました。"))
 
+@bp.route("/admin/credentials/<int:credential_id>/delete", methods=["POST"])
+def admin_delete_credential(credential_id):
+    current_user = _logged_in_user()
+    if not current_user:
+        return redirect(url_for("auth.login_page"))
+    admin_username = _get_default_admin_username()
+    if current_user.username != admin_username:
+        return jsonify({"error": "Admin access required"}), 403
+
+    credential = Credential.query.get_or_404(credential_id)
+    owner = credential.user
+    # 管理者の Passkey が0件になると、ログイン画面から誰でも管理者を初回登録できてしまうため残す
+    if owner.username == admin_username and len(owner.credentials) <= 1:
+        return redirect(url_for("auth.admin_users", message="管理者の最後の Passkey は削除できません。"))
+
+    db.session.delete(credential)
+    db.session.commit()
+    return redirect(url_for("auth.admin_users", message=f"'{owner.username}' の Passkey を1件削除しました。"))
+
 def _clear_auth_session():
     for key in ("auth_state", "auth_user_id", "auth_rp_id", "auth_members_only"):
         session.pop(key, None)
@@ -331,6 +350,10 @@ def login_finish():
         auth_server, _ = _make_webauthn_server(rp_id=session.get("auth_rp_id") or RP_ID)
         auth_server.authenticate_complete(auth_state, [cred_data], auth_response)
 
+        # 使われていない古い Passkey を見分けられるよう、最終使用日時を記録する
+        cred_record.last_used_at = datetime.utcnow()
+        db.session.commit()
+
         # 認証が成功した場合に初めてログイン状態にする（PERMANENT_SESSION_LIFETIME の間保持）
         _clear_auth_session()
         session.permanent = True
@@ -395,11 +418,37 @@ def _clear_enrollment_session():
     session.pop("enrollment_token", None)
 
 
+def _logged_in_user():
+    user_id = session.get("login_user_id")
+    return db.session.get(User, user_id) if user_id else None
+
+
+@bp.route("/account/passkeys")
+def account_passkeys():
+    """ログイン中の本人が、自分の Passkey を確認・この端末に追加する画面"""
+    user = _logged_in_user()
+    if not user:
+        return redirect(url_for("auth.login_page", next=request.path))
+    credentials = sorted(user.credentials, key=lambda c: (c.created_at is None, c.created_at or datetime.min))
+    return render_template("account_passkeys.html", user=user, credentials=credentials)
+
+
 @bp.route("/register_start", methods=["POST"])
 def register_start():
     try:
-        admin_enrollment = session.get("allow_admin_enrollment")
-        if admin_enrollment:
+        payload = request.get_json(silent=True) or {}
+        # ログイン中の本人による追加（前回の途中状態は持ち越さない）
+        session.pop("register_self_user_id", None)
+        self_add = bool(payload.get("add_to_current_user"))
+
+        admin_enrollment = session.get("allow_admin_enrollment") and not self_add
+        if self_add:
+            current_user = _logged_in_user()
+            if not current_user:
+                return jsonify({"error": "Login required"}), 401
+            username = current_user.username
+            session["register_self_user_id"] = current_user.id
+        elif admin_enrollment:
             # 登録URL経由では、トークンに紐づくユーザー以外は登録させない（リクエストのusernameは無視）
             enrollment_user = _get_enrollment_user()
             if not enrollment_user:
@@ -414,14 +463,15 @@ def register_start():
         if not username:
             return jsonify({"error": "Username required"}), 400
 
-        if not _public_registration_enabled() and not admin_enrollment and not _can_register_username(username):
+        if (not _public_registration_enabled() and not admin_enrollment and not self_add
+                and not _can_register_username(username)):
             return jsonify({
                 "error": "Public registration is disabled. Please ask an administrator to create your account."
             }), 403
 
         user = User.query.filter_by(username=username).first()
-        # 管理者が発行した登録URL経由なら、登録済みでも Passkey を追加・登録し直しできる
-        if user and user.credentials and not admin_enrollment:
+        # 管理者が発行した登録URL経由、またはログイン中の本人なら、登録済みでも Passkey を追加できる
+        if user and user.credentials and not admin_enrollment and not self_add:
             return jsonify({"error": "This user already has a passkey registered"}), 400
 
         session["register_username"] = username
@@ -522,7 +572,12 @@ def register_finish():
         logger.debug("credential_id (len): %d bytes", len(cred_data.credential_id))
 
         user = User.query.filter_by(username=username).first()
-        if session.get("allow_admin_enrollment"):
+        self_user_id = session.get("register_self_user_id")
+        if self_user_id:
+            # ログイン中の本人による追加: 開始時と同じ本人がログインしたままであること
+            if not user or user.id != self_user_id or session.get("login_user_id") != self_user_id:
+                return jsonify({"error": "Login required"}), 401
+        elif session.get("allow_admin_enrollment"):
             enrollment_user = _get_enrollment_user()
             if not enrollment_user or not user or enrollment_user.id != user.id:
                 return jsonify({"error": "Invalid or expired enrollment token"}), 400
@@ -531,7 +586,7 @@ def register_finish():
             db.session.add(user)
             db.session.flush()
             logger.debug("User created with id: %d", user.id)
-        elif user.credentials and not session.get("allow_admin_enrollment"):
+        elif user.credentials and not self_user_id and not session.get("allow_admin_enrollment"):
             return jsonify({"error": "This user already has a passkey registered"}), 400
 
         cred = Credential(
@@ -541,15 +596,20 @@ def register_finish():
             sign_count=credential.counter,
         )
         db.session.add(cred)
-        # 登録URLは使い切りにする（commit前に消さないとDBに反映されない）
-        user.passkey_enrollment_token = None
-        user.passkey_enrollment_expires_at = None
+        if not self_user_id:
+            # 登録URLは使い切りにする（commit前に消さないとDBに反映されない）
+            user.passkey_enrollment_token = None
+            user.passkey_enrollment_expires_at = None
         db.session.commit()
         logger.debug("Credential saved successfully")
 
         session.pop("register_state", None)
         session.pop("register_rp_id", None)
-        _clear_enrollment_session()
+        if self_user_id:
+            session.pop("register_self_user_id", None)
+            session.pop("register_username", None)
+        else:
+            _clear_enrollment_session()
         logger.debug("Session cleared after registration")
 
         return jsonify({"status": "ok"})

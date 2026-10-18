@@ -200,6 +200,41 @@
     </table>
   </div>
 
+  <h3 style="margin-top: 28px;">Passkey 一覧</h3>
+  <p class="muted" style="margin-top: 0;">「最終使用」が古い・「不明」のままの Passkey は、使われていない可能性があります（「不明」は記録を始める前に登録・使用されたもの）。</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ユーザー名</th>
+          <th>登録日時</th>
+          <th>最終使用</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        {% for credential in user.credentials %}
+        <tr>
+          <td>{{ user.username }}</td>
+          <td>{{ credential.created_at|jst }}</td>
+          <td>{{ credential.last_used_at|jst }}</td>
+          <td>
+            {% if user.username == admin_username and user.credentials|length <= 1 %}
+            <span class="admin-badge">管理者の最後の Passkey</span>
+            {% else %}
+            <form method="post" action="{{ url_for('auth.admin_delete_credential', credential_id=credential.id) }}" onsubmit="return confirm('{{ user.username }} の Passkey（最終使用: {{ credential.last_used_at|jst }}）を削除しますか？');">
+              <button type="submit" class="danger">削除</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
   <p class="muted"><a href="{{ url_for('auth.login_page') }}">ログイン画面へ戻る</a></p>
 </div>
 

@@ -387,7 +387,147 @@ class UsabilityFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(app_spy.call_count + models_spy.call_count, 1)
 
+    # --- 本人による Passkey 追加 ---
+
+    def _finish_registration(self, client, credential_id=b'new-cred'):
+        class FakeCredentialData:
+            def __init__(self):
+                self.credential_id = credential_id
+
+            def __bytes__(self):
+                return b'attested-data'
+
+        class FakeServer:
+            def register_complete(self, state, response):
+                return type('Auth', (), {'credential_data': FakeCredentialData(), 'counter': 0})()
+
+        with patch('auth._make_webauthn_server', return_value=(FakeServer(), 'localhost')):
+            return client.post('/register_finish', json={
+                'id': 'bmV3', 'rawId': 'bmV3', 'clientDataJSON': 'e30', 'attestationObject': 'e30',
+            })
+
+    def test_account_passkeys_page_requires_login(self):
+        response = app.test_client().get('/account/passkeys')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login', response.headers['Location'])
+
+    def test_logged_in_user_can_add_passkey_to_own_account(self):
+        alice = User(username='alice', passkey_enrollment_token='keep-me')
+        db.session.add(alice)
+        db.session.commit()
+        self._add_credential(alice, b'old-cred')
+
+        client = app.test_client()
+        self._login(client, alice)
+        self.assertIn('登録済みの Passkey（1 件）', client.get('/account/passkeys').data.decode('utf-8'))
+
+        start = client.post('/register_start', json={'add_to_current_user': True})
+        self.assertEqual(start.status_code, 200)
+        self.assertEqual(start.get_json()['user']['name'], 'alice')
+        self.assertEqual(self._finish_registration(client).get_json(), {'status': 'ok'})
+
+        db.session.expire_all()
+        saved = db.session.get(User, alice.id)
+        self.assertEqual(len(saved.credentials), 2)
+        self.assertIsNotNone(Credential.query.filter_by(credential_id=b'new-cred').one().created_at)
+        # 本人追加では、管理者が発行した登録URLには触れない
+        self.assertEqual(saved.passkey_enrollment_token, 'keep-me')
+
+    def test_self_add_requires_login(self):
+        response = app.test_client().post('/register_start', json={'add_to_current_user': True})
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_self_add_fails_if_logged_out_before_finish(self):
+        alice = User(username='alice')
+        db.session.add(alice)
+        db.session.commit()
+
+        client = app.test_client()
+        self._login(client, alice)
+        client.post('/register_start', json={'add_to_current_user': True})
+        client.get('/logout')
+
+        response = self._finish_registration(client)
+
+        self.assertNotEqual(response.get_json(), {'status': 'ok'})
+        self.assertEqual(Credential.query.count(), 0)
+
+    # --- Passkey の最終使用日時・管理者による削除 ---
+
+    def test_login_records_last_used_at(self):
+        alice = User(username='alice')
+        db.session.add(alice)
+        db.session.commit()
+        self._add_credential(alice, b'cred-alice')
+
+        client = app.test_client()
+        client.post('/login_start', json={})
+        self._finish_login(client, raw_id=b'cred-alice')
+
+        db.session.expire_all()
+        self.assertIsNotNone(Credential.query.filter_by(credential_id=b'cred-alice').one().last_used_at)
+
+    def test_admin_can_delete_single_passkey(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        db.session.add_all([admin, alice])
+        db.session.commit()
+        self._add_credential(alice, b'cred-1')
+        self._add_credential(alice, b'cred-2')
+        target = Credential.query.filter_by(credential_id=b'cred-1').one()
+
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+        html = client.get('/admin/users').data.decode('utf-8')
+        self.assertIn(f'/admin/credentials/{target.id}/delete', html)
+
+        client.post(f'/admin/credentials/{target.id}/delete')
+
+        self.assertEqual([c.credential_id for c in Credential.query.all()], [b'cred-2'])
+
+    def test_admin_last_passkey_cannot_be_deleted(self):
+        admin = User(username='admin')
+        db.session.add(admin)
+        db.session.commit()
+        self._add_credential(admin, b'cred-admin')
+        credential = Credential.query.one()
+
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+        client.post(f'/admin/credentials/{credential.id}/delete')
+
+        self.assertEqual(Credential.query.count(), 1)
+
+    def test_non_admin_cannot_delete_passkey(self):
+        alice = User(username='alice')
+        db.session.add(alice)
+        db.session.commit()
+        self._add_credential(alice, b'cred-1')
+        credential = Credential.query.one()
+
+        client = app.test_client()
+        self._login(client, alice)
+        response = client.post(f'/admin/credentials/{credential.id}/delete')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Credential.query.count(), 1)
+
     # --- 既存DBへの列追加 ---
+
+    def test_missing_credential_columns_are_added_on_startup(self):
+        db.session.execute(text('DROP TABLE credential'))
+        db.session.execute(text(
+            'CREATE TABLE credential (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, '
+            'credential_id BLOB NOT NULL UNIQUE, public_key BLOB NOT NULL, sign_count INTEGER)'
+        ))
+        db.session.commit()
+
+        _ensure_added_columns()
+
+        columns = {c['name'] for c in sa_inspect(db.engine).get_columns('credential')}
+        self.assertTrue({'created_at', 'last_used_at'} <= columns)
 
     def test_missing_user_columns_are_added_on_startup(self):
         db.session.execute(text('DROP TABLE "user"'))

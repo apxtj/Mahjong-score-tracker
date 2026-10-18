@@ -20,6 +20,9 @@
         {% if navigation.next_player %}
           <a href="{{ url_for('profile', player_id=navigation.next_player.id) }}" class="btn btn-outline-primary btn-sm">次のメンバー →</a>
         {% endif %}
+        {% if my_player_id == player.id %}
+          <a href="{{ url_for('auth.account_passkeys') }}" class="btn btn-outline-success btn-sm">この端末に Passkey を追加</a>
+        {% endif %}
       </div>
       <p class="text-muted fs-5">総対戦数: <strong>{{ stats.total_games }}</strong> ゲーム</p>
     </div>
