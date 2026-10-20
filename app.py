@@ -181,6 +181,51 @@ DEFAULT_UMA = "20000,-20000,-40000,-60000"
 SCORE_INPUT_UNIT = 100
 
 
+def rank_entries(entries, tie_order_ids):
+    """点数の高い順に並べる。同点のときだけ tie_order_ids（起家に近い＝上位にする順のプレイヤーID）で決める。
+
+    entries: [{"id": プレイヤーID, "score": 点数}, ...]
+    同点のプレイヤーが tie_order_ids に含まれていない場合は ValueError。
+    """
+    scores = defaultdict(list)
+    for entry in entries:
+        scores[entry["score"]].append(entry["id"])
+    for tied_ids in scores.values():
+        if len(tied_ids) > 1 and not set(tied_ids) <= set(tie_order_ids):
+            raise ValueError("同点のプレイヤーがいます。起家に近い人（上位にする人）を選んでください。")
+
+    priority = {player_id: index for index, player_id in enumerate(tie_order_ids)}
+    return sorted(entries, key=lambda e: (-e["score"], priority.get(e["id"], 0)))
+
+
+def _parse_tie_order(value):
+    try:
+        return [int(v) for v in (value or "").split(",") if v.strip()]
+    except ValueError:
+        return []
+
+
+def _today_jst():
+    return (datetime.utcnow() + timedelta(hours=9)).date()
+
+
+def _default_player_ids():
+    """入力画面の初期プレイヤー: 今日の直前の対局の4人、なければログイン中の本人だけ"""
+    last_game = Game.query.filter_by(date=_today_jst()).order_by(Game.id.desc()).first()
+    if last_game:
+        last_ids = [last_game.player1_id, last_game.player2_id, last_game.player3_id, last_game.player4_id]
+        # 同じ端末で続けて入力しているなら、前回入力した並び順のまま出す（順位順に入れ替わらないように）
+        remembered = session.get("last_player_order") or []
+        if sorted(remembered) == sorted(last_ids):
+            return remembered
+        return last_ids
+
+    current_user = _current_user()
+    if current_user and current_user.player_id:
+        return [current_user.player_id, None, None, None]
+    return [None, None, None, None]
+
+
 def _load_rule_settings():
     """全員で共有するオカ・ウマ設定をDBから読む"""
     try:
@@ -233,17 +278,16 @@ def index():
                 error = f"スコアの合計が100,000ではありません（現在: {total_score:,}）。"
                 return render_template("index.html", players=players, error=error, form_data=form_data)
 
-            # スコア順に並び替え（降順）
-            sorted_players = sorted(
-                [
-                    {"id": int(form_data["player1_id"]), "score": form_data["score1"]},
-                    {"id": int(form_data["player2_id"]), "score": form_data["score2"]},
-                    {"id": int(form_data["player3_id"]), "score": form_data["score3"]},
-                    {"id": int(form_data["player4_id"]), "score": form_data["score4"]},
-                ],
-                key=lambda x: x['score'],
-                reverse=True
-            )
+            # スコア順に並び替え（降順）。座順は使わず、同点のときだけ指定された順位で決める
+            entries = [
+                {"id": int(form_data[f"player{i}_id"]), "score": form_data[f"score{i}"]}
+                for i in range(1, 5)
+            ]
+            form_data["tie_order"] = request.form.get("tie_order", "")
+            try:
+                sorted_players = rank_entries(entries, _parse_tie_order(form_data["tie_order"]))
+            except ValueError as tie_error:
+                return render_template("index.html", players=players, error=str(tie_error), form_data=form_data)
 
             # うまを分解（文字列→整数リスト）
             try:
@@ -307,6 +351,9 @@ def index():
             )
             db.session.commit()
 
+            # 次の局の入力欄を、今回と同じ並び順で出すために覚えておく
+            session["last_player_order"] = [entry["id"] for entry in entries]
+
             return redirect(url_for('results'))
 
         except Exception as e:
@@ -322,10 +369,9 @@ def index():
     })
     form_data.update(_load_rule_settings())
 
-    # ログインユーザーに紐づくプレイヤーを東家に初期選択しておく
-    current_user = _current_user()
-    if current_user and current_user.player_id:
-        form_data["player1_id"] = str(current_user.player_id)
+    # 今日の直前の対局の4人（なければ本人）を初期選択しておく
+    for i, player_id in enumerate(_default_player_ids(), start=1):
+        form_data[f"player{i}_id"] = str(player_id) if player_id else ""
 
     return render_template("index.html", players=players, error=error, form_data=form_data)
 

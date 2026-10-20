@@ -8,7 +8,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 from sqlalchemy import inspect as sa_inspect, text
 
-from app import app, db, _ensure_added_columns, recalc_total_scores
+from app import app, db, _ensure_added_columns, rank_entries, recalc_total_scores
 from models import AppSetting, Credential, Game, Player, Title, User, compute_all_player_stats
 
 
@@ -275,6 +275,104 @@ class UsabilityFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('95,000', response.data.decode('utf-8'))
         self.assertEqual(Game.query.count(), 0)
+
+    # --- 座順なしの入力・同点の扱い ---
+
+    def test_rank_entries_ignores_input_order_without_ties(self):
+        entries = [{'id': 1, 'score': 10000}, {'id': 2, 'score': 40000}, {'id': 3, 'score': 30000}, {'id': 4, 'score': 20000}]
+
+        ranked = rank_entries(entries, [])
+
+        self.assertEqual([e['id'] for e in ranked], [2, 3, 4, 1])
+
+    def test_rank_entries_uses_tie_order_only_for_tied_players(self):
+        entries = [{'id': 1, 'score': 25000}, {'id': 2, 'score': 40000}, {'id': 3, 'score': 25000}, {'id': 4, 'score': 10000}]
+
+        ranked = rank_entries(entries, [3, 1])
+
+        self.assertEqual([e['id'] for e in ranked], [2, 3, 1, 4])
+
+    def test_rank_entries_handles_three_way_tie(self):
+        entries = [{'id': 1, 'score': 30000}, {'id': 2, 'score': 30000}, {'id': 3, 'score': 30000}, {'id': 4, 'score': 10000}]
+
+        ranked = rank_entries(entries, [2, 3, 1])
+
+        self.assertEqual([e['id'] for e in ranked], [2, 3, 1, 4])
+
+    def test_rank_entries_requires_tie_order_when_tied(self):
+        entries = [{'id': 1, 'score': 25000}, {'id': 2, 'score': 40000}, {'id': 3, 'score': 25000}, {'id': 4, 'score': 10000}]
+
+        with self.assertRaises(ValueError):
+            rank_entries(entries, [])
+        with self.assertRaises(ValueError):
+            rank_entries(entries, [3])
+
+    def _post_game(self, client, players, scores, tie_order=''):
+        data = {'score_unit': '100', 'oka': '0', 'uma': '20000,10000,-10000,-20000', 'tie_order': tie_order}
+        for i, (player, score) in enumerate(zip(players, scores), start=1):
+            data[f'player{i}_id'] = player.id
+            data[f'score{i}'] = str(score)
+        return client.post('/', data=data)
+
+    def test_tied_game_is_rejected_without_tie_order_and_saved_with_it(self):
+        players = self._players()
+        user = User(username='alice')
+        db.session.add(user)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, user)
+
+        response = self._post_game(client, players, [250, 400, 250, 100])
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('起家に近い人', response.data.decode('utf-8'))
+        self.assertEqual(Game.query.count(), 0)
+
+        response = self._post_game(client, players, [250, 400, 250, 100], tie_order=f'{players[2].id},{players[0].id}')
+        self.assertEqual(response.status_code, 302)
+        game = Game.query.one()
+        self.assertEqual(
+            [game.player1_id, game.player2_id, game.player3_id, game.player4_id],
+            [players[1].id, players[2].id, players[0].id, players[3].id],
+        )
+        self.assertEqual([game.score2, game.score3], [25000 + 10000, 25000 - 10000])
+
+    def test_next_game_form_carries_over_todays_players_in_same_order(self):
+        players = self._players(5)
+        user = User(username='alice', player_id=players[4].id)
+        db.session.add(user)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, user)
+
+        # 入力順 P2, P1, P4, P3 で保存（順位順は P1, P2, P3, P4）
+        entered = [players[1], players[0], players[3], players[2]]
+        self._post_game(client, entered, [300, 400, 100, 200])
+
+        html = client.get('/').data.decode('utf-8')
+        for i, player in enumerate(entered, start=1):
+            select_html = html.split(f'name="player{i}_id"')[1].split('</select>')[0]
+            self.assertIn(f'<option value="{player.id}" selected', select_html)
+
+        # 別の端末（並び順の記憶なし）では、直前の対局の順位順で4人が入る
+        other = app.test_client()
+        self._login(other, user)
+        html = other.get('/').data.decode('utf-8')
+        first_select = html.split('name="player1_id"')[1].split('</select>')[0]
+        self.assertIn(f'<option value="{players[0].id}" selected', first_select)
+
+    def test_first_game_of_day_preselects_only_own_player(self):
+        players = self._players(5)
+        _add_game(players[:4], [40000, 30000, 20000, 10000], date(2020, 1, 1))
+        user = User(username='alice', player_id=players[4].id)
+        db.session.add(user)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, user)
+
+        html = client.get('/').data.decode('utf-8')
+
+        selected_players = [p for p in players if f'<option value="{p.id}" selected' in html]
+        self.assertEqual(selected_players, [players[4]])
 
     # --- ユーザーとプレイヤーの紐付け ---
 

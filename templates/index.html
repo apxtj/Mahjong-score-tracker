@@ -10,17 +10,18 @@
         {% endif %}
 
         <p id="score-total" class="text-muted mt-2">合計: 0 点</p>
-        <p class="small text-muted">持ち点は百点単位で入力します（例: 25000点 → 250）。3人分を入れると残り1人は自動で入ります。</p>
+        <p class="small text-muted">持ち点は百点単位で入力します（例: 25000点 → 250）。3人分を入れると残り1人は自動で入ります。マイナスは「±」で切り替えます。</p>
+        <p class="small text-muted">座る順に入れる必要はありません。同点のときだけ、起家に近い人を選んでもらいます。</p>
 
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="gameForm">
             {% set fd = form_data or {} %}
             <input type="hidden" name="score_unit" value="100">
+            <input type="hidden" name="tie_order" id="tie_order" value="{{ fd.tie_order or '' }}">
 
-            {% set winds = ["東家", "南家", "西家", "北家"] %}
             {% for i in range(1, 5) %}
             <div class="mb-3">
-                <label for="player{{ i }}_id" class="form-label">{{ winds[i-1] }}</label>
-                <select name="player{{ i }}_id" class="form-control" required>
+                <label for="player{{ i }}_id" class="form-label">プレイヤー{{ i }}</label>
+                <select name="player{{ i }}_id" id="player{{ i }}_id" class="form-control player-select" required>
                     <option value="" {% if fd["player" ~ i ~ "_id"] == "" %}selected{% endif %}>-- プレイヤーを選択 --</option>
                     {% for player in players %}
                     <option value="{{ player.id }}" {% if fd["player" ~ i ~ "_id"]|string == player.id|string %}selected{% endif %}>
@@ -29,6 +30,8 @@
                     {% endfor %}
                 </select>
                 <div class="input-group mt-2">
+                    <!-- iPhone の数字キーボードには「-」がないため、符号は ± ボタンで切り替える -->
+                    <button type="button" class="btn btn-outline-secondary sign-toggle" data-target="score{{ i }}" aria-label="プラス・マイナスを切り替え">±</button>
                     <input type="number" id="score{{ i }}" name="score{{ i }}" class="form-control" placeholder="例: 250"
                            inputmode="numeric" step="1"
                            value="{{ (fd["score" ~ i] // 100) if fd["score" ~ i] is defined and fd["score" ~ i] != 0 else '' }}" required>
@@ -37,9 +40,12 @@
             </div>
             {% endfor %}
 
+            <!-- 同点のときだけ表示: 起家に近い人（上位にする人）を選ぶ -->
+            <div id="tieBox" class="alert alert-warning d-none" role="alert"></div>
+
             <!-- ボタンをラップして横並び + 間隔を調整 -->
             <div class="d-flex gap-5 mb-3">
-                <button type="submit" class="btn btn-primary">結果を表示</button>
+                <button type="submit" class="btn btn-primary" id="submitButton">結果を表示</button>
                 <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#umaOkaSettings" aria-expanded="false" aria-controls="umaOkaSettings">
                     ウマ・オカ設定を表示／非表示
                 </button>
@@ -135,6 +141,91 @@
                 autoIndex = targetIndex;
             }
 
+            // ---- 同点の順位指定 ----
+            const selects = [1, 2, 3, 4].map(i => document.getElementById(`player${i}_id`));
+            const tieBox = document.getElementById("tieBox");
+            const tieOrderInput = document.getElementById("tie_order");
+            const submitButton = document.getElementById("submitButton");
+            // 同点グループごとに、タップされた順（起家に近い順）のプレイヤーID
+            const tieChoices = {};
+            // 再表示時（エラーで戻ってきたとき）は、前回の指定を引き継ぐ
+            const initialTieOrder = tieOrderInput.value.split(",").filter(v => v);
+
+            function tieGroups() {
+                const byScore = {};
+                selects.forEach((select, i) => {
+                    const score = readValue(inputs[i]);
+                    if (!select.value || score === null) return;
+                    const name = select.options[select.selectedIndex].text.trim();
+                    (byScore[score] = byScore[score] || []).push({ id: select.value, name });
+                });
+                return Object.entries(byScore)
+                    .filter(([, members]) => members.length > 1)
+                    .map(([score, members]) => ({
+                        score: Number(score),
+                        members,
+                        key: `${score}:${members.map(m => m.id).sort().join(",")}`,
+                    }));
+            }
+
+            function renderTies() {
+                const groups = tieGroups();
+                tieBox.replaceChildren();
+                let allResolved = true;
+                const order = [];
+
+                groups.forEach(group => {
+                    const ids = group.members.map(m => m.id);
+                    if (!(group.key in tieChoices)) {
+                        tieChoices[group.key] = initialTieOrder.filter(id => ids.includes(id));
+                    }
+                    const chosen = tieChoices[group.key].filter(id => ids.includes(id));
+                    const resolved = chosen.length >= ids.length - 1;
+                    if (resolved) {
+                        order.push(...chosen, ...ids.filter(id => !chosen.includes(id)));
+                    } else {
+                        allResolved = false;
+                    }
+
+                    const title = document.createElement("div");
+                    title.className = "fw-bold mb-2";
+                    title.textContent = `同点（${(group.score * unit).toLocaleString()} 点）: 起家に近い人から順にタップしてください`;
+                    tieBox.appendChild(title);
+
+                    const buttons = document.createElement("div");
+                    buttons.className = "d-flex flex-wrap gap-2 mb-2";
+                    group.members.forEach(member => {
+                        const rank = chosen.indexOf(member.id);
+                        const button = document.createElement("button");
+                        button.type = "button";
+                        button.className = rank >= 0 ? "btn btn-warning" : "btn btn-outline-dark";
+                        button.textContent = rank >= 0 ? `${rank + 1}. ${member.name}` : member.name;
+                        button.addEventListener("click", () => {
+                            // 選び直したいときは、選択済みの人をタップするとやり直し
+                            tieChoices[group.key] = rank >= 0 ? [] : [...chosen, member.id];
+                            renderTies();
+                        });
+                        buttons.appendChild(button);
+                    });
+                    tieBox.appendChild(buttons);
+                });
+
+                tieBox.classList.toggle("d-none", groups.length === 0);
+                tieOrderInput.value = allResolved ? order.join(",") : "";
+                submitButton.disabled = !allResolved;
+            }
+
+            // ---- ± ボタン（iPhone の数字キーボード用） ----
+            document.querySelectorAll(".sign-toggle").forEach(button => {
+                button.addEventListener("click", () => {
+                    const input = document.getElementById(button.dataset.target);
+                    const value = readValue(input);
+                    if (value === null || value === 0) return;
+                    input.value = -value;
+                    input.dispatchEvent(new Event("input"));
+                });
+            });
+
             inputs.forEach((input, idx) => {
                 input.addEventListener("input", () => {
                     if (idx === autoIndex) {
@@ -145,10 +236,20 @@
                         autofill();
                     }
                     updateTotal();
+                    renderTies();
                 });
+            });
+            selects.forEach(select => select.addEventListener("change", renderTies));
+
+            document.getElementById("gameForm").addEventListener("submit", (event) => {
+                if (submitButton.disabled) {
+                    event.preventDefault();
+                    tieBox.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
             });
 
             updateTotal();
+            renderTies();
         });
         </script>                
 {% endblock %}
