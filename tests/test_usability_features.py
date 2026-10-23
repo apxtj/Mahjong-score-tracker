@@ -243,6 +243,53 @@ class UsabilityFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('有効期限が切れた', response.get_json()['error'])
 
+    # --- LINE アプリ内ブラウザ対策 ---
+
+    LINE_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
+               '(KHTML, like Gecko) Mobile/15E148 Safari Line/14.10.0')
+    SAFARI_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '
+                 '(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')
+
+    def test_issued_enrollment_url_opens_in_external_browser_from_line(self):
+        admin = User(username='admin')
+        alice = User(username='alice')
+        db.session.add_all([admin, alice])
+        db.session.commit()
+
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+        response = client.post(f'/admin/users/{alice.id}/passkey', follow_redirects=True)
+
+        token = db.session.get(User, alice.id).passkey_enrollment_token
+        self.assertIn(f'/enroll/{token}?openExternalBrowser=1', response.data.decode('utf-8'))
+
+    def test_enrollment_url_with_external_browser_param_still_works(self):
+        from datetime import datetime, timedelta
+        db.session.add(User(
+            username='alice', passkey_enrollment_token='tok',
+            passkey_enrollment_expires_at=datetime.utcnow() + timedelta(hours=1),
+        ))
+        db.session.commit()
+
+        response = app.test_client().get('/enroll/tok?openExternalBrowser=1')
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_line_in_app_browser_shows_notice_on_register_and_login(self):
+        from datetime import datetime, timedelta
+        db.session.add(User(
+            username='alice', passkey_enrollment_token='tok',
+            passkey_enrollment_expires_at=datetime.utcnow() + timedelta(hours=1),
+        ))
+        db.session.commit()
+        client = app.test_client()
+
+        for path in ['/enroll/tok', '/login']:
+            line_html = client.get(path, headers={'User-Agent': self.LINE_UA}).data.decode('utf-8')
+            safari_html = client.get(path, headers={'User-Agent': self.SAFARI_UA}).data.decode('utf-8')
+            self.assertIn('LINE の中では Passkey を使えません', line_html, path)
+            self.assertNotIn('LINE の中では Passkey を使えません', safari_html, path)
+
     def test_admin_can_issue_enrollment_url_for_self(self):
         admin = User(username='admin')
         db.session.add(admin)

@@ -22,6 +22,16 @@ import json
 bp = Blueprint("auth", __name__)
 
 
+def is_line_in_app_browser(user_agent):
+    """LINE アプリ内ブラウザか（UA に "Line/バージョン" が入る）。Passkey が使えないことが多い"""
+    return " Line/" in (user_agent or "")
+
+
+@bp.app_context_processor
+def inject_line_browser_flag():
+    return {"in_line_app": is_line_in_app_browser(request.headers.get("User-Agent"))}
+
+
 def _public_registration_enabled():
     return str(os.environ.get("ALLOW_PUBLIC_REGISTRATION", "False")).strip().lower() in {
         "1", "true", "yes", "on"
@@ -197,7 +207,8 @@ def admin_issue_passkey_registration(user_id):
     user.passkey_enrollment_expires_at = datetime.utcnow() + timedelta(hours=24)
     db.session.commit()
 
-    url = url_for("auth.enroll_user_passkey", token=token, _external=True)
+    # LINE で送ったとき、LINE 内ブラウザではなく Safari / Chrome で開かせる（LINE の公式パラメータ）
+    url = url_for("auth.enroll_user_passkey", token=token, _external=True, openExternalBrowser=1)
     return redirect(url_for("auth.admin_users", message=f"{user.username} の登録URLをクリップボードにコピーしました: {url}"))
 
 @bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])

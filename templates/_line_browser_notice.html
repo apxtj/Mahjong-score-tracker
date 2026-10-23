@@ -1,0 +1,54 @@
+{# LINE アプリ内ブラウザでは Passkey が使えないことが多いため、標準ブラウザで開き直すよう案内する #}
+{% if in_line_app %}
+<div class="line-notice" role="alert">
+  <strong>LINE の中では Passkey を使えません</strong>
+  <p>右上（または右下）の「…」メニューから「ブラウザで開く」を選び、Safari / Chrome で開き直してください。</p>
+  <button type="button" id="lineCopyUrlButton">このページのURLをコピー</button>
+  <span id="lineCopyUrlResult"></span>
+</div>
+<style>
+  .line-notice {
+    margin: 16px 0;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    line-height: 1.6;
+  }
+  .line-notice p { margin: 6px 0 10px; color: #991b1b; }
+  .line-notice button {
+    border: none;
+    border-radius: 8px;
+    background: #06c755;
+    color: #fff;
+    padding: 0.6em 1em;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #lineCopyUrlResult { margin-left: 8px; font-size: 0.9rem; }
+</style>
+<script>
+  (function () {
+    // 外部ブラウザで開くパラメータが付いていなければ、付けて開き直す（LINE が標準ブラウザへ切り替える）
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('openExternalBrowser')) {
+      url.searchParams.set('openExternalBrowser', '1');
+      window.location.replace(url.toString());
+      return;
+    }
+
+    document.getElementById('lineCopyUrlButton').addEventListener('click', function () {
+      const result = document.getElementById('lineCopyUrlResult');
+      const text = window.location.href;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function () { result.textContent = 'コピーしました。Safari / Chrome に貼り付けて開いてください。'; })
+          .catch(function () { window.prompt('このURLをコピーしてください', text); });
+      } else {
+        window.prompt('このURLをコピーしてください', text);
+      }
+    });
+  })();
+</script>
+{% endif %}

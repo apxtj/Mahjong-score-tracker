@@ -97,6 +97,7 @@
 <body data-username="{{ username or '' }}" data-enrollment-mode="{{ 'true' if enrollment_mode else 'false' }}">
 <div class="container">
   <h2>Passkey登録</h2>
+  {% include '_line_browser_notice.html' %}
   {% if enrollment_mode %}
   <p class="user-banner">{{ username }} の Passkey を登録します。</p>
   {% else %}
