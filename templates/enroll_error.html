@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ '登録URLの期限切れ' if reason == 'expired' else '無効な登録URL' }}</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 16px;
+    background: #f4f7fb;
+    font-family: sans-serif;
+    color: #1f2937;
+  }
+  .container {
+    max-width: 560px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #dfe7f2;
+    border-radius: 18px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    padding: 28px 24px;
+  }
+  h2 { margin-top: 0; }
+  .notice {
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #fff7ed;
+    color: #9a5b00;
+    border: 1px solid #fed7aa;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+  p { line-height: 1.7; color: #4b5563; }
+  a { color: #2563eb; font-weight: 600; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  {% if reason == 'expired' %}
+    <h2>登録URLの有効期限が切れています</h2>
+    <div class="notice">このURLの有効期限（{{ expired_at|jst }}）を過ぎたため、Passkey を登録できません。</div>
+    <p>登録URLは発行から24時間だけ有効です。管理者に登録URLの再発行を依頼してください。</p>
+  {% else %}
+    <h2>この登録URLは使えません</h2>
+    <div class="notice">このURLは、すでに使用済みか、新しいURLが発行されたため無効になっています。</div>
+    <p>すでに Passkey を登録済みの場合は、そのままログインできます。登録がまだの場合は、管理者に登録URLの再発行を依頼してください。</p>
+  {% endif %}
+  <p><a href="{{ url_for('auth.login_page') }}">ログイン画面へ</a></p>
+</div>
+</body>
+</html>

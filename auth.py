@@ -389,15 +389,25 @@ def register_page():
 def enroll_user_passkey(token):
     user = User.query.filter_by(passkey_enrollment_token=token).first()
     if not user:
-        return jsonify({"error": "Invalid or expired enrollment token"}), 400
+        # 使用済み・再発行済み・URLの誤りのいずれか（DBにトークンが残っていないので区別できない）
+        _clear_enrollment_session()
+        return render_template("enroll_error.html", reason="invalid"), 404
 
     if user.passkey_enrollment_expires_at and user.passkey_enrollment_expires_at < datetime.utcnow():
-        return jsonify({"error": "Enrollment token expired"}), 400
+        _clear_enrollment_session()
+        return render_template(
+            "enroll_error.html",
+            reason="expired",
+            expired_at=user.passkey_enrollment_expires_at,
+        ), 410
 
     session["register_username"] = user.username
     session["enrollment_token"] = token
     session["allow_admin_enrollment"] = True
     return render_template("register.html", username=user.username, enrollment_mode=True)
+
+ENROLLMENT_EXPIRED_MESSAGE = "登録URLの有効期限が切れたか、無効になっています。管理者に登録URLの再発行を依頼してください。"
+
 
 def _get_enrollment_user():
     """セッションの登録トークンから、有効期限内の登録対象ユーザーを返す"""
@@ -453,7 +463,7 @@ def register_start():
             enrollment_user = _get_enrollment_user()
             if not enrollment_user:
                 _clear_enrollment_session()
-                return jsonify({"error": "Invalid or expired enrollment token"}), 400
+                return jsonify({"error": ENROLLMENT_EXPIRED_MESSAGE}), 400
             username = enrollment_user.username
         else:
             username = (request.json.get("username") or "").strip() if request.is_json and request.json else ""
@@ -580,7 +590,7 @@ def register_finish():
         elif session.get("allow_admin_enrollment"):
             enrollment_user = _get_enrollment_user()
             if not enrollment_user or not user or enrollment_user.id != user.id:
-                return jsonify({"error": "Invalid or expired enrollment token"}), 400
+                return jsonify({"error": ENROLLMENT_EXPIRED_MESSAGE}), 400
         if not user:
             user = User(username=username)
             db.session.add(user)

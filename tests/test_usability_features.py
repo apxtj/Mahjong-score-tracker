@@ -201,6 +201,48 @@ class UsabilityFeatureTests(unittest.TestCase):
         # 登録URLなしでは、登録済みユーザーの Passkey は追加できない
         self.assertEqual(app.test_client().post('/register_start', json={'username': 'alice'}).status_code, 403)
 
+    def test_expired_enrollment_url_shows_expired_page(self):
+        from datetime import datetime, timedelta
+        alice = User(
+            username='alice',
+            passkey_enrollment_token='old-token',
+            passkey_enrollment_expires_at=datetime.utcnow() - timedelta(minutes=1),
+        )
+        db.session.add(alice)
+        db.session.commit()
+
+        response = app.test_client().get('/enroll/old-token')
+
+        self.assertEqual(response.status_code, 410)
+        html = response.data.decode('utf-8')
+        self.assertIn('登録URLの有効期限が切れています', html)
+        self.assertIn('再発行を依頼', html)
+
+    def test_unknown_or_used_enrollment_url_shows_invalid_page(self):
+        response = app.test_client().get('/enroll/no-such-token')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('この登録URLは使えません', response.data.decode('utf-8'))
+
+    def test_enrollment_expiring_after_opening_url_returns_japanese_message(self):
+        from datetime import datetime, timedelta
+        alice = User(
+            username='alice',
+            passkey_enrollment_token='tok',
+            passkey_enrollment_expires_at=datetime.utcnow() + timedelta(hours=1),
+        )
+        db.session.add(alice)
+        db.session.commit()
+        client = app.test_client()
+        client.get('/enroll/tok')
+        alice.passkey_enrollment_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        db.session.commit()
+
+        response = client.post('/register_start', json={})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('有効期限が切れた', response.get_json()['error'])
+
     def test_admin_can_issue_enrollment_url_for_self(self):
         admin = User(username='admin')
         db.session.add(admin)
