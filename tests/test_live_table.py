@@ -6,7 +6,7 @@ import unittest
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 from app import app, db
-from live import LiveError, apply_action, hand_points, new_state, round_label
+from live import LiveError, apply_action, hand_points, new_state, points_table, round_label
 from models import LiveTable, Player, User
 
 
@@ -48,6 +48,46 @@ class HandPointsTests(unittest.TestCase):
     def test_invalid_fu_is_rejected(self):
         with self.assertRaises(LiveError):
             hand_points(2, 35, False)
+
+
+class PointsTableTests(unittest.TestCase):
+    """和了入力のプルダウン候補"""
+
+    def labels(self, kind, who, han):
+        return [option["label"] for option in points_table()[kind][who][han]]
+
+    def test_labels_show_points_for_each_fu(self):
+        self.assertEqual(self.labels("ron", "child", 1)[:2], ["30符 1,000点", "40符 1,300点"])
+        self.assertEqual(self.labels("tsumo", "child", 2)[0], "20符 400・700")
+        self.assertEqual(self.labels("tsumo", "dealer", 3)[2], "30符 2,000オール")
+
+    def test_mangan_by_fu_is_collapsed_into_one_option(self):
+        self.assertEqual(self.labels("ron", "child", 4), ["25符 6,400点", "30符 7,700点", "40符以上 満貫 8,000点"])
+        self.assertEqual(self.labels("ron", "dealer", 3)[-1], "70符以上 満貫 12,000点")
+
+    def test_limit_hands_have_single_option(self):
+        self.assertEqual(self.labels("ron", "child", 5), ["満貫 8,000点"])
+        self.assertEqual(self.labels("tsumo", "dealer", 13), ["役満 16,000オール"])
+        self.assertEqual(self.labels("tsumo", "child", 6), ["跳満 3,000・6,000"])
+
+    def test_impossible_fu_are_excluded(self):
+        fus = lambda kind, han: [o["fu"] for o in points_table()[kind]["child"][han]]
+        self.assertNotIn(20, fus("ron", 2))
+        self.assertNotIn(25, fus("ron", 1))
+        self.assertNotIn(25, fus("tsumo", 2))
+        self.assertIn(25, fus("tsumo", 3))
+
+    def test_every_candidate_is_accepted_when_confirmed(self):
+        table = points_table()
+        for kind in ("ron", "tsumo"):
+            for who, winner in (("dealer", 0), ("child", 1)):
+                for han, options in table[kind][who].items():
+                    for option in options:
+                        action = {"type": kind, "winner": winner, "han": han, "fu": option["fu"]}
+                        if kind == "ron":
+                            action["loser"] = 2
+                        _, deltas, _ = apply_action(_state(), action)
+                        self.assertEqual(sum(deltas), 0, action)
 
 
 class ApplyActionTests(unittest.TestCase):

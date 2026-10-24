@@ -10,7 +10,8 @@ document.addEventListener('DOMContentLoaded', function () {
         [1, '1翻'], [2, '2翻'], [3, '3翻'], [4, '4翻'],
         [5, '満貫'], [6, '跳満'], [8, '倍満'], [11, '三倍満'], [13, '役満'],
     ];
-    const FU_OPTIONS = [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110];
+    // 翻ごとの「符と点数」の候補（サーバーの点数計算から作られたもの）
+    const POINTS_TABLE = JSON.parse(urls.pointsTable || '{}');
 
     let current = null;          // 最新の表示データ（サーバーの public_state）
     let pendingAction = null;    // 確定待ちの操作（モーダル）
@@ -230,7 +231,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function handInputs(tsumo) {
         const hanOptions = HAN_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-        const fuOptions = FU_OPTIONS.map(v => `<option value="${v}" ${v === 30 ? 'selected' : ''}>${v}符</option>`).join('');
         const direct = tsumo
             ? `<div class="direct-dealer-win d-none">
                  <label class="form-label small mb-1">1人あたりの支払い（オール）</label>
@@ -253,8 +253,8 @@ document.addEventListener('DOMContentLoaded', function () {
               <label class="btn btn-outline-primary btn-sm" for="modeDirect">点数を直接入力</label>
             </div>
             <div class="mode-han d-flex gap-1 mb-2">
-              <select class="form-select" name="han">${hanOptions}</select>
-              <select class="form-select" name="fu">${fuOptions}</select>
+              <select class="form-select" name="han" style="flex: 0 0 6.5em;" aria-label="翻数">${hanOptions}</select>
+              <select class="form-select" name="fu" style="flex: 1 1 auto;" aria-label="符と点数"></select>
             </div>
             <div class="mode-direct d-none">${direct}</div>`;
     }
@@ -318,8 +318,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const direct = modeInput.value === 'direct';
             modalBody.querySelector('.mode-han').classList.toggle('d-none', direct);
             modalBody.querySelector('.mode-direct').classList.toggle('d-none', !direct);
-            const han = Number(modalBody.querySelector('[name="han"]').value);
-            modalBody.querySelector('[name="fu"]').disabled = han >= 5;
+            refreshPointOptions();
         }
         const dealerWin = modalBody.querySelector('.direct-dealer-win');
         if (dealerWin) {
@@ -328,6 +327,26 @@ document.addEventListener('DOMContentLoaded', function () {
             dealerWin.classList.toggle('d-none', !isDealer);
             modalBody.querySelector('.direct-child-win').classList.toggle('d-none', isDealer);
         }
+    }
+
+    // 翻数・和了者（親か子か）・ロン/ツモに合わせて、「符と点数」の候補を作り直す
+    function refreshPointOptions() {
+        const hanSelect = modalBody.querySelector('[name="han"]');
+        const fuSelect = modalBody.querySelector('[name="fu"]');
+        if (!hanSelect || !fuSelect) return;
+        const winner = modalBody.querySelector('[name="winner"]').value;
+        const who = winner !== '' && Number(winner) === current.dealer ? 'dealer' : 'child';
+        const kind = pendingAction === 'tsumo' ? 'tsumo' : 'ron';
+        const key = `${kind}:${who}:${hanSelect.value}`;
+        if (fuSelect.dataset.key === key) return;
+
+        const candidates = ((POINTS_TABLE[kind] || {})[who] || {})[hanSelect.value] || [];
+        const previous = fuSelect.value;
+        fuSelect.replaceChildren(...candidates.map(c => new Option(c.label, c.fu)));
+        // 前に選んでいた符があればそのまま、なければ30符（なければ先頭）
+        const values = candidates.map(c => String(c.fu));
+        fuSelect.value = values.includes(previous) ? previous : (values.includes('30') ? '30' : values[0] || '');
+        fuSelect.dataset.key = key;
     }
 
     // 入力のたびに、確定した場合の点数の動きをサーバーで計算して表示する

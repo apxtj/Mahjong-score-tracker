@@ -149,7 +149,8 @@
      data-takeover-url="{{ url_for('live.live_takeover', table_id=table_id) }}"
      data-close-url="{{ url_for('live.live_close', table_id=table_id) }}"
      data-index-url="{{ url_for('live.live_index') }}"
-     data-input-url="{{ url_for('index') }}">
+     data-input-url="{{ url_for('index') }}"
+     data-points-table='{{ points_table|tojson }}'>
 
   <button type="button" class="btn btn-light btn-sm" id="focusExitButton">✕ 戻る</button>
 

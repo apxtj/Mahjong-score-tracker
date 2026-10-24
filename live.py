@@ -66,6 +66,60 @@ def hand_points(han, fu, dealer):
     return {"ron": _ceil100(base * 4), "tsumo_dealer": _ceil100(base * 2), "tsumo_child": _ceil100(base)}
 
 
+LIMIT_HANS = [5, 6, 8, 11, 13]  # 満貫・跳満・倍満・三倍満・役満
+
+
+def _fu_candidates(han, tsumo):
+    """実際に出る符だけを返す（1翻の20・25符、ロンの20符、2翻25符のツモは出ない）"""
+    candidates = []
+    for fu in sorted(VALID_FU):
+        if han == 1 and fu in (20, 25):
+            continue
+        if not tsumo and fu == 20:
+            continue
+        if tsumo and han == 2 and fu == 25:
+            continue
+        candidates.append(fu)
+    return candidates
+
+
+def points_table():
+    """和了入力のプルダウン用の候補一覧（点数は hand_points で計算するので確定時と食い違わない）
+
+    {"ron"|"tsumo": {"dealer"|"child": {翻: [{"fu", "label"}]}}}
+    満貫以上は符によらないので候補は1つ（fu=30）。
+    """
+    table = {}
+    for tsumo in (False, True):
+        kind = "tsumo" if tsumo else "ron"
+        table[kind] = {}
+        for dealer in (True, False):
+            by_han = {}
+            for han in [1, 2, 3, 4] + LIMIT_HANS:
+                fus = _fu_candidates(han, tsumo) if han < 5 else [30]
+                options = []
+                for fu in fus:
+                    points = hand_points(han, fu, dealer)
+                    if not tsumo:
+                        amount = f"{points['ron']:,}点"
+                    elif dealer:
+                        amount = f"{points['tsumo_each']:,}オール"
+                    else:
+                        amount = f"{points['tsumo_child']:,}・{points['tsumo_dealer']:,}"
+                    name = _hand_name(han, fu)
+                    if han >= 5:
+                        options.append({"fu": fu, "label": f"{name} {amount}"})
+                    elif name == "満貫":
+                        # 3翻70符・4翻40符以上はすべて満貫なので1行にまとめる
+                        options.append({"fu": fu, "label": f"{fu}符以上 満貫 {amount}"})
+                        break
+                    else:
+                        options.append({"fu": fu, "label": f"{fu}符 {amount}"})
+                by_han[han] = options
+            table[kind]["dealer" if dealer else "child"] = by_han
+    return table
+
+
 def round_label(round_index):
     """0 → 東1局, 4 → 南1局 ..."""
     return f"{SEAT_WINDS[(round_index // 4) % 4]}{round_index % 4 + 1}局"
@@ -390,7 +444,7 @@ def live_table(table_id):
     table = _get_table(table_id)
     if not table:
         return redirect(url_for("live.live_index", error="この卓は見つかりません。"))
-    return render_template("live_table.html", table_id=table.id)
+    return render_template("live_table.html", table_id=table.id, points_table=points_table())
 
 
 @bp.route("/<int:table_id>/state")
