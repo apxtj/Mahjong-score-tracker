@@ -94,18 +94,8 @@ Supabase や PostgreSQL で新規に DB を作る場合は、この SQL をそ�
 
 ### 管理画面の認証
 
-`/admin/titles` は管理者向け画面なので、Basic Auth で保護されています。
+管理画面（`/admin/users`、`/admin/titles`）には、Passkey でログインした管理者だけが入れます。パスワードによるログインはありません。
 
-必要な環境変数:
+- `ADMIN_USERNAME` : 管理者として扱うユーザー名（省略時は `admin`）
 
-- `ADMIN_PASSWORD` : 管理画面に入るためのパスワード（必須）
-- `ADMIN_USERNAME` : 省略時は `admin` を使用
-
-例:
-
-```bash
-export ADMIN_PASSWORD="your-strong-password"
-export ADMIN_USERNAME="admin"
-```
-
-`ADMIN_PASSWORD` が設定されていない場合は、管理画面へのアクセスは `401 Unauthorized` になります。
+未ログインで開くとログイン画面へ移動し、管理者以外のユーザーでは `403` になります。

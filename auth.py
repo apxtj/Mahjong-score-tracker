@@ -232,6 +232,22 @@ def admin_delete_user(user_id):
     db.session.commit()
     return redirect(url_for("auth.admin_users", message=f"ユーザー '{user.username}' を削除しました。"))
 
+@bp.route("/admin/users/<int:user_id>/game_permission", methods=["POST"])
+def admin_set_game_permission(user_id):
+    """戦績の修正・削除の権限を付与・解除する"""
+    current_user = _logged_in_user()
+    if not current_user:
+        return redirect(url_for("auth.login_page"))
+    if current_user.username != _get_default_admin_username():
+        return jsonify({"error": "Admin access required"}), 403
+
+    user = User.query.get_or_404(user_id)
+    user.can_edit_games = request.form.get("can_edit_games") == "1"
+    db.session.commit()
+    state = "付与" if user.can_edit_games else "解除"
+    return redirect(url_for("auth.admin_users", message=f"'{user.username}' の戦績の修正・削除の権限を{state}しました。"))
+
+
 @bp.route("/admin/credentials/<int:credential_id>/delete", methods=["POST"])
 def admin_delete_credential(credential_id):
     current_user = _logged_in_user()

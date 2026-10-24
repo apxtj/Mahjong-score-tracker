@@ -115,6 +115,18 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .permission-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .admin-outer .permission-toggle input {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+  }
   .player-select {
     padding: 0.55em 0.6em;
     border: 1px solid var(--border);
@@ -156,6 +168,7 @@
         <tr>
           <th>ユーザー名</th>
           <th>本人のプレイヤー</th>
+          <th>戦績の修正・削除</th>
           <th>Passkey登録</th>
           <th>操作</th>
         </tr>
@@ -176,6 +189,18 @@
                 {% endfor %}
               </select>
             </form>
+          </td>
+          <td>
+            {% if user.username == admin_username %}
+            <span class="admin-badge">常に可（管理者）</span>
+            {% else %}
+            <form method="post" action="{{ url_for('auth.admin_set_game_permission', user_id=user.id) }}">
+              <label class="permission-toggle">
+                <input type="checkbox" name="can_edit_games" value="1" {% if user.can_edit_games %}checked{% endif %} onchange="this.form.submit()">
+                許可
+              </label>
+            </form>
+            {% endif %}
           </td>
           <td>
             <form method="post" action="{{ url_for('auth.admin_issue_passkey_registration', user_id=user.id) }}" id="issue-passkey-form-{{ user.id }}">

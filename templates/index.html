@@ -26,7 +26,7 @@
         </style>
 
         <div class="game-input-header d-flex justify-content-between align-items-center">
-            <h1>戦績入力</h1>
+            <h1>{% if edit_game %}戦績の修正{% else %}戦績入力{% endif %}</h1>
             <a class="help-link" data-bs-toggle="collapse" href="#inputHelp" role="button" aria-expanded="false" aria-controls="inputHelp">使い方</a>
         </div>
         <div class="collapse" id="inputHelp">
@@ -47,6 +47,15 @@
             <input type="hidden" name="score_unit" value="100">
             <input type="hidden" name="tie_order" id="tie_order" value="{{ fd.tie_order or '' }}">
 
+            {% if edit_game %}
+            <div class="row g-1 mb-2 align-items-center">
+                <label for="game_date" class="col-5 col-form-label">対局日</label>
+                <div class="col-7">
+                    <input type="date" id="game_date" name="game_date" class="form-control" value="{{ fd.game_date }}" required>
+                </div>
+            </div>
+            {% endif %}
+
             {% for i in range(1, 5) %}
             <div class="row g-1 mb-2 align-items-center player-row">
                 <div class="col-5">
@@ -66,7 +75,7 @@
                         <button type="button" class="btn btn-outline-secondary sign-toggle" data-target="score{{ i }}" aria-label="プラス・マイナスを切り替え">±</button>
                         <input type="number" id="score{{ i }}" name="score{{ i }}" class="form-control" placeholder="250"
                                inputmode="numeric" step="1" aria-label="プレイヤー{{ i }}の持ち点（百点単位）"
-                               value="{{ (fd["score" ~ i] // 100) if fd["score" ~ i] is defined and fd["score" ~ i] != 0 else '' }}" required>
+                               value="{{ (fd["score" ~ i] // 100) if fd["score" ~ i] is defined and (fd["score" ~ i] != 0 or edit_game) else '' }}" required>
                         <span class="input-group-text">00点</span>
                     </div>
                 </div>
@@ -78,10 +87,17 @@
 
             <div class="score-bar d-flex justify-content-between align-items-center">
                 <span id="score-total">合計: 0 点</span>
+                {% if edit_game %}
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('results') }}" class="btn btn-outline-secondary">やめる</a>
+                    <button type="submit" class="btn btn-primary" id="submitButton">修正を保存</button>
+                </div>
+                {% else %}
                 <button type="submit" class="btn btn-primary" id="submitButton">保存</button>
+                {% endif %}
             </div>
 
-            <a class="help-link" data-bs-toggle="collapse" href="#umaOkaSettings" role="button" aria-expanded="false" aria-controls="umaOkaSettings">ウマ・オカ・写真の設定</a>
+            <a class="help-link" data-bs-toggle="collapse" href="#umaOkaSettings" role="button" aria-expanded="false" aria-controls="umaOkaSettings">{% if edit_game %}この対局のウマ・オカ{% else %}ウマ・オカ・写真の設定{% endif %}</a>
 
             <div class="collapse" id="umaOkaSettings">
             <div class="card card-body">
@@ -95,14 +111,20 @@
                     <label for="uma" class="form-label">ウマ (順位ごとのボーナスをカンマ区切りで4つ入力)</label>
                     <input type="text" name="uma" class="form-control" placeholder="例: 30000,10000,-10000,-30000"
                         value="{{ form_data.uma if form_data and form_data.uma is defined else '30000,10000,-10000,-30000' }}" required>
+                    {% if edit_game %}
+                    <small class="form-text text-muted">この対局だけに使われます（全員共通の設定は変わりません）。</small>
+                    {% else %}
                     <small class="form-text text-muted">順位1位から4位までのウマ点数をカンマで区切って入力してください。オカ・ウマは保存すると全員共通の設定として次回も使われます。</small>
+                    {% endif %}
                 </div>
 
+                {% if not edit_game %}
                 <div class="mb-3">
                     <label for="photo" class="form-label">ゲームの写真（任意）</label>
                     <input type="file" name="photo" accept="image/*" class="form-control">
                     <small class="form-text text-muted">選択しない場合は写真なしのまま保存されます。</small>
                 </div>
+                {% endif %}
             </div>
             </div>
 

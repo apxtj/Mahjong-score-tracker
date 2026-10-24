@@ -243,6 +243,201 @@ class UsabilityFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('有効期限が切れた', response.get_json()['error'])
 
+    # --- 戦績の修正・削除と権限 ---
+
+    def _game_setup(self):
+        players = self._players(5)
+        game = _add_game(players[:4], [40000, 30000, 20000, 10000], date(2026, 10, 1))
+        # ウマ・オカ付きの保存状態にする（素点 400/300/200/100、ウマ 20/10/-10/-20、オカ 0）
+        game.score1, game.score2, game.score3, game.score4 = 60000, 40000, 10000, -10000
+        game.uma1, game.uma2, game.uma3, game.uma4 = 20000, 10000, -10000, -20000
+        db.session.commit()
+        recalc_total_scores()
+        admin = User(username='admin')
+        editor = User(username='editor', can_edit_games=True)
+        member = User(username='member')
+        db.session.add_all([admin, editor, member])
+        db.session.commit()
+        return players, game, admin, editor, member
+
+    def test_edit_form_shows_raw_scores_date_and_rules_of_the_game(self):
+        players, game, admin, _, _ = self._game_setup()
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+
+        html = client.get(f'/games/{game.id}/edit').data.decode('utf-8')
+
+        self.assertIn('戦績の修正', html)
+        self.assertIn('value="2026-10-01"', html)
+        for i, raw in enumerate([400, 300, 200, 100], start=1):
+            self.assertIn(f'name="score{i}"', html)
+            self.assertIn(f'value="{raw}"', html.split(f'name="score{i}"')[1].split('>')[0])
+        self.assertIn('value="20000,10000,-10000,-20000"', html)
+        self.assertIn(f'value="{players[0].id},{players[1].id},{players[2].id},{players[3].id}"', html)
+
+    def test_editing_game_updates_scores_date_and_totals(self):
+        players, game, _, editor, _ = self._game_setup()
+        AppSetting.set_value('rule_uma', '5000,0,0,-5000')
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, editor)
+
+        # P5 に入れ替え、点数と日付も直す
+        response = client.post(f'/games/{game.id}/edit', data={
+            'score_unit': '100', 'oka': '0', 'uma': '20000,10000,-10000,-20000', 'tie_order': '',
+            'game_date': '2026-09-30',
+            'player1_id': players[4].id, 'score1': '100',
+            'player2_id': players[1].id, 'score2': '500',
+            'player3_id': players[2].id, 'score3': '250',
+            'player4_id': players[3].id, 'score4': '150',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        game = db.session.get(Game, game.id)
+        self.assertEqual(game.date, date(2026, 9, 30))
+        self.assertEqual(
+            [game.player1_id, game.player2_id, game.player3_id, game.player4_id],
+            [players[1].id, players[2].id, players[3].id, players[4].id],
+        )
+        self.assertEqual([game.score1, game.score2, game.score3, game.score4], [70000, 35000, 5000, -10000])
+        totals = {p.id: db.session.get(Player, p.id).total_score for p in players}
+        self.assertEqual(totals[players[0].id], 0)
+        self.assertEqual(totals[players[4].id], -10000)
+        # 修正では全員共通のルール設定は変わらない
+        self.assertEqual(AppSetting.get_value('rule_uma'), '5000,0,0,-5000')
+
+    def test_editing_into_a_tie_requires_tie_order(self):
+        players, game, admin, _, _ = self._game_setup()
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+        data = {
+            'score_unit': '100', 'oka': '0', 'uma': '20000,10000,-10000,-20000', 'tie_order': '',
+            'game_date': '2026-10-01',
+            'player1_id': players[0].id, 'score1': '300',
+            'player2_id': players[1].id, 'score2': '300',
+            'player3_id': players[2].id, 'score3': '200',
+            'player4_id': players[3].id, 'score4': '200',
+        }
+
+        response = client.post(f'/games/{game.id}/edit', data=data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('起家に近い人', response.data.decode('utf-8'))
+
+        data['tie_order'] = f'{players[1].id},{players[0].id},{players[3].id},{players[2].id}'
+        self.assertEqual(client.post(f'/games/{game.id}/edit', data=data).status_code, 302)
+        db.session.expire_all()
+        game = db.session.get(Game, game.id)
+        self.assertEqual(
+            [game.player1_id, game.player2_id, game.player3_id, game.player4_id],
+            [players[1].id, players[0].id, players[3].id, players[2].id],
+        )
+
+    def test_member_without_permission_cannot_edit_or_delete(self):
+        _, game, _, _, member = self._game_setup()
+        client = app.test_client()
+        self._login(client, member)
+
+        self.assertEqual(client.get(f'/games/{game.id}/edit').status_code, 403)
+        self.assertEqual(client.post(f'/delete_game/{game.id}').status_code, 403)
+        self.assertEqual(Game.query.count(), 1)
+        html = client.get('/results').data.decode('utf-8')
+        self.assertNotIn(f'/games/{game.id}/edit', html)
+        self.assertNotIn(f'/delete_game/{game.id}', html)
+
+    def test_permitted_user_and_admin_see_edit_and_delete_buttons(self):
+        _, game, admin, editor, _ = self._game_setup()
+        for user, is_admin in [(admin, True), (editor, False)]:
+            client = app.test_client()
+            self._login(client, user, is_admin=is_admin)
+            html = client.get('/results').data.decode('utf-8')
+            self.assertIn(f'/games/{game.id}/edit', html)
+            self.assertIn(f'/delete_game/{game.id}', html)
+
+    def test_permitted_user_can_delete_game_with_photo(self):
+        from models import GamePhoto
+        _, game, _, editor, _ = self._game_setup()
+        db.session.add(GamePhoto(game_id=game.id, image_url='/static/x.png'))
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, editor)
+
+        response = client.post(f'/delete_game/{game.id}')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Game.query.count(), 0)
+        self.assertEqual(GamePhoto.query.count(), 0)
+
+    def test_admin_grants_and_revokes_game_permission(self):
+        _, _, admin, _, member = self._game_setup()
+        client = app.test_client()
+        self._login(client, admin, is_admin=True)
+
+        client.post(f'/admin/users/{member.id}/game_permission', data={'can_edit_games': '1'})
+        self.assertTrue(db.session.get(User, member.id).can_edit_games)
+
+        client.post(f'/admin/users/{member.id}/game_permission', data={})
+        db.session.expire_all()
+        self.assertFalse(db.session.get(User, member.id).can_edit_games)
+
+    def test_non_admin_cannot_grant_game_permission(self):
+        _, _, _, editor, member = self._game_setup()
+        client = app.test_client()
+        self._login(client, editor)
+
+        response = client.post(f'/admin/users/{member.id}/game_permission', data={'can_edit_games': '1'})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(db.session.get(User, member.id).can_edit_games)
+
+    def test_invalid_score_input_is_shown_again_without_crashing(self):
+        players = self._players()
+        user = User(username='alice')
+        db.session.add(user)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, user)
+
+        response = client.post('/', data={
+            'score_unit': '100', 'oka': '0', 'uma': '0,0,0,0',
+            'player1_id': players[0].id, 'score1': 'abc',
+            'player2_id': players[1].id, 'score2': '300',
+            'player3_id': players[2].id, 'score3': '200',
+            'player4_id': players[3].id, 'score4': '100',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('整数で入力', response.data.decode('utf-8'))
+
+    # --- 称号管理の認証（パスワードログインなし） ---
+
+    def test_admin_titles_rejects_password_login(self):
+        import base64
+        credentials = base64.b64encode(b'admin:secret').decode()
+        with patch.dict(os.environ, {'ADMIN_PASSWORD': 'secret'}):
+            response = app.test_client().get('/admin/titles', headers={'Authorization': f'Basic {credentials}'})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login', response.headers['Location'])
+
+    def test_admin_titles_forbidden_for_non_admin_user(self):
+        alice = User(username='alice')
+        db.session.add(alice)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, alice)
+
+        self.assertEqual(client.get('/admin/titles').status_code, 403)
+
+    def test_admin_titles_requires_admin_user_not_just_session_flag(self):
+        alice = User(username='alice')
+        db.session.add(alice)
+        db.session.commit()
+        client = app.test_client()
+        self._login(client, alice, is_admin=True)
+
+        self.assertEqual(client.get('/admin/titles').status_code, 403)
+
     # --- LINE アプリ内ブラウザ対策 ---
 
     LINE_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 '

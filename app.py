@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from flask_migrate import Migrate
 from sqlalchemy import func
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
@@ -61,6 +61,7 @@ _ADDED_COLUMNS = {
         ("passkey_enrollment_token", "VARCHAR(128)"),
         ("passkey_enrollment_expires_at", "TIMESTAMP"),
         ("player_id", "INTEGER"),
+        ("can_edit_games", "BOOLEAN DEFAULT FALSE"),
     ],
     "credential": [
         ("created_at", "TIMESTAMP"),
@@ -97,15 +98,42 @@ migrate = Migrate(app, db)
 from auth import bp as auth_bp
 app.register_blueprint(auth_bp)
 
+from live import bp as live_bp, finished_table_form_data
+app.register_blueprint(live_bp)
+
 
 @app.context_processor
 def inject_current_player():
-    """ナビバーの「マイページ」用に、ログインユーザーに紐づくプレイヤーIDを渡す"""
-    user_id = session.get("login_user_id")
-    if not user_id:
-        return {"my_player_id": None}
-    user = db.session.get(User, user_id)
-    return {"my_player_id": user.player_id if user else None}
+    """ナビバーの「マイページ」用のプレイヤーIDと、戦績の修正・削除ボタンを出すかを渡す"""
+    user = _current_user()
+    return {
+        "my_player_id": user.player_id if user else None,
+        "can_manage_games": can_manage_games(user),
+    }
+
+
+def _is_admin_user(user):
+    return bool(user and session.get("login_is_admin")
+                and user.username == os.environ.get("ADMIN_USERNAME", "admin"))
+
+
+def can_manage_games(user=None):
+    """戦績の修正・削除ができるか（管理者、または管理者から権限を付与されたユーザー）"""
+    user = user or _current_user()
+    if not user:
+        return False
+    return _is_admin_user(user) or bool(user.can_edit_games)
+
+
+def game_manager_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not _current_user():
+            return redirect(url_for("auth.login_page", next=request.path))
+        if not can_manage_games():
+            return jsonify({"error": "戦績の修正・削除の権限がありません。管理者に依頼してください。"}), 403
+        return f(*args, **kwargs)
+    return wrapper
 
 
 @app.template_filter("jst")
@@ -131,24 +159,15 @@ def login_required(f):
     return wrapper
 
 def admin_required(f):
+    """Passkey でログインした管理者だけを通す（パスワードによるログインは受け付けない）"""
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if session.get('login_user_id') and session.get('login_is_admin'):
-            return f(*args, **kwargs)
+        current_user = _current_user()
+        if not current_user:
+            return redirect(url_for("auth.login_page", next=request.path))
 
-        admin_username = os.environ.get("ADMIN_USERNAME", "admin")
-        admin_password = os.environ.get("ADMIN_PASSWORD")
-
-        if not admin_password:
-            logger.warning("ADMIN_PASSWORD is not configured. Refusing admin access.")
-            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
-
-        auth = request.authorization
-        if not auth:
-            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
-
-        if auth.username != admin_username or auth.password != admin_password:
-            return ('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+        if not _is_admin_user(current_user):
+            return jsonify({"error": "Admin access required"}), 403
 
         return f(*args, **kwargs)
 
@@ -235,6 +254,88 @@ def _load_rule_settings():
     return {"oka": oka, "uma": AppSetting.get_value("rule_uma", DEFAULT_UMA)}
 
 
+class GameFormError(ValueError):
+    """入力画面に表示するエラー。form_data は入力内容の再表示用"""
+
+    def __init__(self, message, form_data):
+        super().__init__(message)
+        self.form_data = form_data
+
+
+def _parse_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_game_form(form):
+    """戦績入力フォーム（新規・修正共通）を検証し、(form_data, Game に設定する値, 入力順のプレイヤー) を返す。
+
+    入力に問題があれば GameFormError（メッセージは画面表示用）。
+    """
+    # 画面からは百点単位で送られてくる（score_unit なしの場合は点数そのもの）
+    score_unit = SCORE_INPUT_UNIT if form.get("score_unit") == str(SCORE_INPUT_UNIT) else 1
+
+    scores = [_parse_int(form.get(f"score{i}")) for i in range(1, 5)]
+    player_ids = [_parse_int(form.get(f"player{i}_id")) for i in range(1, 5)]
+    oka_value = _parse_int(form.get("oka", 0))
+
+    # エラー時の再表示用（数値にできない値は空欄として扱う）
+    form_data = {
+        "oka": oka_value if oka_value is not None else form.get("oka", ""),
+        "uma": form.get("uma", DEFAULT_UMA),
+        "tie_order": form.get("tie_order", ""),
+        "game_date": form.get("game_date", ""),
+    }
+    for i in range(1, 5):
+        form_data[f"player{i}_id"] = form.get(f"player{i}_id", "")
+        form_data[f"score{i}"] = scores[i - 1] * score_unit if scores[i - 1] is not None else 0
+
+    def fail(message):
+        return GameFormError(message, form_data)
+
+    if None in player_ids:
+        raise fail("プレイヤーを4人選んでください。")
+    if None in scores or oka_value is None:
+        raise fail("持ち点とオカは整数で入力してください。")
+
+    # プレイヤーIDの重複チェック
+    if len(set(player_ids)) < 4:
+        raise fail("同じプレイヤーを複数選択しています。すべて異なるプレイヤーを選んでください。")
+
+    # スコアの合計チェック
+    total_score = sum(form_data[f"score{i}"] for i in range(1, 5))
+    if total_score != 100000:
+        raise fail(f"スコアの合計が100,000ではありません（現在: {total_score:,}）。")
+
+    # スコア順に並び替え（降順）。座順は使わず、同点のときだけ指定された順位で決める
+    entries = [{"id": player_ids[i - 1], "score": form_data[f"score{i}"]} for i in range(1, 5)]
+    try:
+        sorted_players = rank_entries(entries, _parse_tie_order(form_data["tie_order"]))
+    except ValueError as tie_error:
+        raise fail(str(tie_error)) from tie_error
+
+    # うまを分解（文字列→整数リスト）
+    try:
+        uma_values = [int(x.strip()) for x in form_data["uma"].split(",")]
+        if len(uma_values) != 4:
+            raise ValueError("うまの値は4つ必要です。")
+    except Exception as e:
+        raise fail(f"うまの形式エラー: {str(e)}") from e
+
+    oka_value = form_data["oka"]
+
+    # うま・おかを加算した最終スコアを計算（1位にだけオカ）
+    values = {"oka": oka_value}
+    for idx, player_data in enumerate(sorted_players):
+        values[f"player{idx + 1}_id"] = player_data["id"]
+        values[f"score{idx + 1}"] = player_data["score"] + uma_values[idx] + (oka_value if idx == 0 else 0)
+        values[f"uma{idx + 1}"] = uma_values[idx]
+
+    return form_data, values, entries
+
+
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
@@ -244,85 +345,16 @@ def index():
 
     if request.method == "POST":
         try:
-            # 画面からは百点単位で送られてくる（score_unit なしの場合は点数そのもの）
-            score_unit = SCORE_INPUT_UNIT if request.form.get("score_unit") == str(SCORE_INPUT_UNIT) else 1
+            form_data, values, entries = _parse_game_form(request.form)
+        except GameFormError as form_error:
+            return render_template("index.html", players=players, error=str(form_error), form_data=form_error.form_data)
 
-            # フォームデータの取得
-            form_data = {
-                "player1_id": request.form.get("player1_id", ""),
-                "score1": int(request.form.get("score1", 0)) * score_unit,
-                "player2_id": request.form.get("player2_id", ""),
-                "score2": int(request.form.get("score2", 0)) * score_unit,
-                "player3_id": request.form.get("player3_id", ""),
-                "score3": int(request.form.get("score3", 0)) * score_unit,
-                "player4_id": request.form.get("player4_id", ""),
-                "score4": int(request.form.get("score4", 0)) * score_unit,
-                "oka": int(request.form.get("oka", 0)),
-                "uma": request.form.get("uma", DEFAULT_UMA),
-            }
-
-            # プレイヤーIDの重複チェック
-            player_ids = [
-                form_data["player1_id"],
-                form_data["player2_id"],
-                form_data["player3_id"],
-                form_data["player4_id"],
-            ]
-            if len(set(player_ids)) < 4:
-                error = "同じプレイヤーを複数選択しています。すべて異なるプレイヤーを選んでください。"
-                return render_template("index.html", players=players, error=error, form_data=form_data)
-
-            # スコアの合計チェック
-            total_score = form_data["score1"] + form_data["score2"] + form_data["score3"] + form_data["score4"]
-            if total_score != 100000:
-                error = f"スコアの合計が100,000ではありません（現在: {total_score:,}）。"
-                return render_template("index.html", players=players, error=error, form_data=form_data)
-
-            # スコア順に並び替え（降順）。座順は使わず、同点のときだけ指定された順位で決める
-            entries = [
-                {"id": int(form_data[f"player{i}_id"]), "score": form_data[f"score{i}"]}
-                for i in range(1, 5)
-            ]
-            form_data["tie_order"] = request.form.get("tie_order", "")
-            try:
-                sorted_players = rank_entries(entries, _parse_tie_order(form_data["tie_order"]))
-            except ValueError as tie_error:
-                return render_template("index.html", players=players, error=str(tie_error), form_data=form_data)
-
-            # うまを分解（文字列→整数リスト）
-            try:
-                uma_values = [int(x.strip()) for x in form_data["uma"].split(",")]
-                if len(uma_values) != 4:
-                    raise ValueError("うまの値は4つ必要です。")
-            except Exception as e:
-                error = f"うまの形式エラー: {str(e)}"
-                return render_template("index.html", players=players, error=error, form_data=form_data)
-
-            oka_value = form_data["oka"]
-
-            # うま・おかを加算した最終スコアを計算
-            final_scores = []
-            for idx, player_data in enumerate(sorted_players):
-                oka = oka_value if idx == 0 else 0
-                final_score = player_data['score'] + uma_values[idx] + oka
-                final_scores.append(final_score)
-
-            # Gameレコードの作成
-            new_game = Game(
-                player1_id=sorted_players[0]['id'], score1=final_scores[0],
-                player2_id=sorted_players[1]['id'], score2=final_scores[1],
-                player3_id=sorted_players[2]['id'], score3=final_scores[2],
-                player4_id=sorted_players[3]['id'], score4=final_scores[3],
-                oka=oka_value,
-                uma1=uma_values[0],
-                uma2=uma_values[1],
-                uma3=uma_values[2],
-                uma4=uma_values[3]
-            )
+        try:
+            new_game = Game(**values)
             db.session.add(new_game)
             # 次回の入力用に、ルールを全員共通の設定として保存
-            AppSetting.set_value("rule_oka", oka_value)
-            AppSetting.set_value("rule_uma", ",".join(str(v) for v in uma_values))
+            AppSetting.set_value("rule_oka", values["oka"])
+            AppSetting.set_value("rule_uma", ",".join(str(values[f"uma{i}"]) for i in range(1, 5)))
             db.session.commit()
 
             uploaded_photo = request.files.get('photo')
@@ -341,13 +373,13 @@ def index():
                 db.session.commit()
 
             # 各プレイヤーのトータルスコアを加算
-            for idx, player_data in enumerate(sorted_players):
-                player = Player.query.get(player_data['id'])
-                player.total_score += final_scores[idx]
+            for i in range(1, 5):
+                player = db.session.get(Player, values[f"player{i}_id"])
+                player.total_score = (player.total_score or 0) + values[f"score{i}"]
             db.session.commit()
 
             _record_permanent_achievements(
-                Player.query.filter(Player.id.in_([p['id'] for p in sorted_players])).all()
+                Player.query.filter(Player.id.in_([entry["id"] for entry in entries])).all()
             )
             db.session.commit()
 
@@ -357,6 +389,7 @@ def index():
             return redirect(url_for('results'))
 
         except Exception as e:
+            db.session.rollback()
             error = f"入力エラーが発生しました: {str(e)}"
             return render_template("index.html", players=players, error=error, form_data=form_data)
 
@@ -372,6 +405,11 @@ def index():
     # 今日の直前の対局の4人（なければ本人）を初期選択しておく
     for i, player_id in enumerate(_default_player_ids(), start=1):
         form_data[f"player{i}_id"] = str(player_id) if player_id else ""
+
+    # ライブ卓から「戦績入力へ」で来た場合は、終了時の点数と席順を引き継ぐ
+    live_form_data = finished_table_form_data(request.args.get("live", type=int))
+    if live_form_data:
+        form_data.update(live_form_data)
 
     return render_template("index.html", players=players, error=error, form_data=form_data)
 
@@ -1062,13 +1100,69 @@ def delete_admin_title(title_id):
 
 
 @app.route("/delete_game/<int:game_id>", methods=["POST"])
-@login_required
+@game_manager_required
 def delete_game(game_id):
     game = Game.query.get_or_404(game_id)
+    # 写真は game_id が必須なので、対局より先に消す
+    GamePhoto.query.filter_by(game_id=game.id).delete(synchronize_session=False)
     db.session.delete(game)
     db.session.commit()
     recalc_total_scores()
     return redirect(url_for('results'))
+
+
+def _game_form_data(game):
+    """保存済みの対局を、入力画面の形（素点・ウマ・オカ・同点時の順位）に戻す"""
+    form_data = {
+        "oka": game.oka or 0,
+        "uma": ",".join(str(getattr(game, f"uma{i}") or 0) for i in range(1, 5)),
+        "game_date": game.date.isoformat() if game.date else "",
+        # 保存時に順位順で並べているので、その順を同点時の順位として引き継ぐ
+        "tie_order": ",".join(str(getattr(game, f"player{i}_id")) for i in range(1, 5)),
+    }
+    for i in range(1, 5):
+        oka = (game.oka or 0) if i == 1 else 0
+        form_data[f"player{i}_id"] = str(getattr(game, f"player{i}_id"))
+        form_data[f"score{i}"] = getattr(game, f"score{i}") - (getattr(game, f"uma{i}") or 0) - oka
+    return form_data
+
+
+@app.route("/games/<int:game_id>/edit", methods=["GET", "POST"])
+@game_manager_required
+def edit_game(game_id):
+    """保存済みの対局を修正する（入力画面と同じ検証・計算を使う）"""
+    game = Game.query.get_or_404(game_id)
+    players = Player.query.all()
+
+    def render(form_data, error=None):
+        return render_template("index.html", players=players, error=error, form_data=form_data, edit_game=game)
+
+    if request.method == "GET":
+        return render(_game_form_data(game))
+
+    try:
+        form_data, values, _ = _parse_game_form(request.form)
+    except GameFormError as form_error:
+        return render(form_error.form_data, str(form_error))
+
+    try:
+        game_date = date.fromisoformat(request.form.get("game_date", ""))
+    except ValueError:
+        return render(form_data, "日付を正しく入力してください。")
+
+    old_player_ids = {getattr(game, f"player{i}_id") for i in range(1, 5)}
+    for key, value in values.items():
+        setattr(game, key, value)
+    game.date = game_date
+    db.session.commit()
+
+    # 累計スコアと永続称号を、修正後の内容で更新する
+    recalc_total_scores()
+    affected_ids = old_player_ids | {values[f"player{i}_id"] for i in range(1, 5)}
+    _record_permanent_achievements(Player.query.filter(Player.id.in_(affected_ids)).all())
+    db.session.commit()
+
+    return redirect(url_for('results', date=game_date.isoformat()))
 
 
 def _is_cloudinary_enabled():

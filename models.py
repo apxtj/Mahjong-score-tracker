@@ -10,6 +10,8 @@ class User(db.Model):
     passkey_enrollment_expires_at = db.Column(db.DateTime, nullable=True)
     # このユーザー本人のプレイヤー（任意）
     player_id = db.Column(db.Integer, db.ForeignKey("player.id"), nullable=True)
+    # 管理者から付与される「戦績の修正・削除」権限（管理者自身は常に可）
+    can_edit_games = db.Column(db.Boolean, default=False, nullable=True)
 
     credentials = db.relationship("Credential", backref="user", lazy=True)
     player = db.relationship("Player", foreign_keys=[player_id])
@@ -404,6 +406,24 @@ class Title(db.Model):
                 return True
 
         return self.meets_conditions(player, all_player_stats=all_player_stats)
+
+
+class LiveTable(db.Model):
+    """対局中の卓（点棒の代わりに点数をやり取りするライブ表示用）"""
+    __tablename__ = "live_table"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    # 点数を操作できる人（記録係）。他の人は閲覧のみ
+    operator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="playing")  # playing / finished / closed
+    state = db.Column(db.Text, nullable=False)  # 現在の点数・局などのJSON
+    history = db.Column(db.Text, nullable=False, default="[]")  # 取り消し用に、操作前の state を積む
+    version = db.Column(db.Integer, nullable=False, default=1)  # 閲覧側が変更を検知するための番号
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    operator = db.relationship("User", foreign_keys=[operator_id])
 
 
 class PlayerTitleAchievement(db.Model):

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}ライブ卓{% endblock %}
+
+{% block content %}
+<style>
+  .live-header h1 { font-size: 1.15rem; margin: 0; }
+  .seat-preview {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .seat-card {
+    border: 1px solid #dee2e6;
+    border-radius: 10px;
+    padding: 8px 4px;
+    text-align: center;
+    background: #fff;
+  }
+  .seat-card .wind { font-size: 1.4rem; font-weight: 700; }
+  .seat-card.dealer { border-color: #dc3545; background: #fff5f5; }
+  .seat-card .dealer-mark { font-size: 0.7rem; color: #dc3545; font-weight: 700; min-height: 1em; }
+  .seat-card .name { font-size: 0.9rem; word-break: break-all; min-height: 1.3em; }
+  .seat-preview.shuffling .name { opacity: 0.3; }
+</style>
+
+<div class="live-header d-flex justify-content-between align-items-center mb-2">
+  <h1>ライブ卓</h1>
+  <a class="small text-muted text-decoration-none" data-bs-toggle="collapse" href="#liveHelp" role="button" aria-expanded="false" aria-controls="liveHelp">使い方</a>
+</div>
+<div class="collapse" id="liveHelp">
+  <ul class="small text-muted ps-3 mb-2">
+    <li>点棒の代わりに、アプリ上で点数をやり取りします。記録係の1人が操作し、他の人の画面にも数秒で反映されます。</li>
+    <li>4人を選んで「場決め」を押すと、席（東南西北）と起家をランダムに決めます。</li>
+    <li>対局が終わったら「戦績入力へ」で、点数をそのまま戦績入力に引き継げます。</li>
+  </ul>
+</div>
+
+{% if request.args.get('error') %}
+<div class="alert alert-danger py-2">{{ request.args.get('error') }}</div>
+{% endif %}
+
+{% if tables %}
+<h2 class="h6 mt-3">進行中・終了した卓</h2>
+<div class="list-group mb-4">
+  {% for table in tables %}
+  <a href="{{ url_for('live.live_table', table_id=table.id) }}" class="list-group-item list-group-item-action">
+    <div class="d-flex justify-content-between">
+      <strong>{{ table.names|join('・') }}</strong>
+      {% if table.status == 'finished' %}
+      <span class="badge bg-secondary">終了</span>
+      {% else %}
+      <span class="badge bg-success">{{ table.round_label }}</span>
+      {% endif %}
+    </div>
+    <small class="text-muted">最終更新 {{ table.updated_at|jst }}</small>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2 class="h6">新しい卓を立てる</h2>
+<form method="post" action="{{ url_for('live.live_create') }}" id="createForm">
+  <div class="row g-1 mb-2">
+    {% for i in range(4) %}
+    <div class="col-6">
+      <select class="form-select member-select" aria-label="メンバー{{ i + 1 }}">
+        <option value="">メンバー{{ i + 1 }}</option>
+        {% for player in players %}
+        <option value="{{ player.id }}" {% if default_player_ids[i] == player.id %}selected{% endif %}>{{ player.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="seat-preview" id="seatPreview">
+    {% for wind in "東南西北" %}
+    <div class="seat-card{% if loop.first %} dealer{% endif %}">
+      <div class="dealer-mark">{% if loop.first %}起家{% endif %}</div>
+      <div class="wind">{{ wind }}</div>
+      <div class="name" data-seat-name="{{ loop.index0 }}">-</div>
+      <input type="hidden" name="seat{{ loop.index0 }}" data-seat-input="{{ loop.index0 }}">
+    </div>
+    {% endfor %}
+  </div>
+  <div id="createError" class="text-danger small mb-2"></div>
+
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-primary flex-fill" id="shuffleButton">🎲 場決め</button>
+    <button type="submit" class="btn btn-primary flex-fill" id="startButton">この席で開始</button>
+  </div>
+  <p class="small text-muted mt-2">場決めをしない場合は、選んだ順（東→南→西→北）で座ります。</p>
+</form>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const selects = Array.from(document.querySelectorAll('.member-select'));
+    const preview = document.getElementById('seatPreview');
+    const errorEl = document.getElementById('createError');
+    // 席順（東南西北）に並んだメンバー。場決めで入れ替わる
+    let seatOrder = [];
+
+    function chosenMembers() {
+      return selects
+        .filter(select => select.value)
+        .map(select => ({ id: select.value, name: select.options[select.selectedIndex].text.trim() }));
+    }
+
+    function render() {
+      for (let seat = 0; seat < 4; seat++) {
+        const member = seatOrder[seat];
+        preview.querySelector(`[data-seat-name="${seat}"]`).textContent = member ? member.name : '-';
+        preview.querySelector(`[data-seat-input="${seat}"]`).value = member ? member.id : '';
+      }
+    }
+
+    function resetOrder() {
+      seatOrder = chosenMembers();
+      errorEl.textContent = '';
+      render();
+    }
+
+    function validate() {
+      const members = chosenMembers();
+      if (members.length !== 4) return '4人を選んでください。';
+      if (new Set(members.map(m => m.id)).size !== 4) return '同じプレイヤーが複数選ばれています。';
+      return '';
+    }
+
+    selects.forEach(select => select.addEventListener('change', resetOrder));
+
+    document.getElementById('shuffleButton').addEventListener('click', () => {
+      const error = validate();
+      if (error) { errorEl.textContent = error; return; }
+      errorEl.textContent = '';
+      // 何度か入れ替えて見せてから確定する
+      let count = 0;
+      preview.classList.add('shuffling');
+      const timer = setInterval(() => {
+        const members = chosenMembers();
+        for (let i = members.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [members[i], members[j]] = [members[j], members[i]];
+        }
+        seatOrder = members;
+        render();
+        if (++count >= 8) {
+          clearInterval(timer);
+          preview.classList.remove('shuffling');
+        }
+      }, 80);
+    });
+
+    document.getElementById('createForm').addEventListener('submit', (event) => {
+      const error = validate();
+      if (error) {
+        event.preventDefault();
+        errorEl.textContent = error;
+      }
+    });
+
+    resetOrder();
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}ライブ卓{% endblock %}
+
+{% block content %}
+<style>
+  .live-board {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      ".    top    ."
+      "left center right"
+      ".    bottom .";
+    gap: 6px;
+    background: #14532d;
+    border-radius: 16px;
+    padding: 10px;
+    margin: 0 auto 10px;
+    max-width: 520px;
+  }
+  .seat-panel {
+    background: #0f3d22;
+    color: #f0fdf4;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 8px 4px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 92px;
+  }
+  .seat-panel[data-pos="top"] { grid-area: top; }
+  .seat-panel[data-pos="left"] { grid-area: left; }
+  .seat-panel[data-pos="right"] { grid-area: right; }
+  .seat-panel[data-pos="bottom"] { grid-area: bottom; }
+  .seat-panel.dealer { border-color: #f87171; }
+  .seat-panel .wind { font-size: 0.85rem; opacity: 0.85; }
+  .seat-panel.dealer .wind { color: #fecaca; font-weight: 700; }
+  .seat-panel .name { font-size: 0.9rem; word-break: break-all; }
+  .seat-panel .score {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #fde68a;
+    letter-spacing: 0.02em;
+  }
+  .seat-panel .score.negative { color: #fca5a5; }
+  .seat-panel .riichi-badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    padding: 0 8px;
+    font-weight: 700;
+  }
+  .seat-panel .riichi-button {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+  }
+  .seat-panel .delta { font-size: 0.8rem; min-height: 1.1em; }
+  .seat-panel .delta.plus { color: #86efac; }
+  .seat-panel .delta.minus { color: #fca5a5; }
+  .center-panel {
+    grid-area: center;
+    background: #052e16;
+    color: #ecfdf5;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 6px;
+  }
+  .center-panel .round { font-size: 1.3rem; font-weight: 700; }
+  .center-panel .sub { font-size: 0.8rem; opacity: 0.9; }
+  /* 卓に置く表示: 各自が自分の側から読めるよう、席の表示をまとめて回転 */
+  .live-board.table-mode { grid-template-columns: 1.25fr 1fr 1.25fr; }
+  .live-board.table-mode .seat-panel { position: relative; }
+  .live-board.table-mode .seat-panel[data-pos="top"] .seat-inner { transform: rotate(180deg); }
+  .live-board.table-mode .seat-panel[data-pos="left"],
+  .live-board.table-mode .seat-panel[data-pos="right"] { min-height: 170px; }
+  .live-board.table-mode .seat-panel[data-pos="left"] .seat-inner,
+  .live-board.table-mode .seat-panel[data-pos="right"] .seat-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 160px;
+  }
+  .live-board.table-mode .seat-panel[data-pos="left"] .seat-inner { transform: translate(-50%, -50%) rotate(90deg); }
+  .live-board.table-mode .seat-panel[data-pos="right"] .seat-inner { transform: translate(-50%, -50%) rotate(-90deg); }
+  .live-toolbar { max-width: 520px; margin: 0 auto; }
+  .live-toolbar .btn { flex: 1 1 30%; }
+  .live-log { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
+  .view-options { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
+  .preview-deltas { font-size: 0.9rem; }
+</style>
+
+<div id="liveApp" data-table-id="{{ table_id }}"
+     data-state-url="{{ url_for('live.live_state', table_id=table_id) }}"
+     data-action-url="{{ url_for('live.live_action', table_id=table_id) }}"
+     data-undo-url="{{ url_for('live.live_undo', table_id=table_id) }}"
+     data-takeover-url="{{ url_for('live.live_takeover', table_id=table_id) }}"
+     data-close-url="{{ url_for('live.live_close', table_id=table_id) }}"
+     data-index-url="{{ url_for('live.live_index') }}"
+     data-input-url="{{ url_for('index') }}">
+
+  <div class="d-flex justify-content-between align-items-center mb-2" style="max-width:520px;margin:0 auto;">
+    <a href="{{ url_for('live.live_index') }}" class="small text-muted text-decoration-none">← 卓の一覧</a>
+    <span class="small text-muted" id="operatorLabel"></span>
+  </div>
+
+  <div id="finishedBanner" class="alert alert-success py-2 d-none" style="max-width:520px;margin:0 auto 8px;">
+    <strong>対局終了</strong>
+    <div id="finalRanking" class="small"></div>
+    <a id="toInputButton" class="btn btn-success btn-sm mt-2">戦績入力へ（点数を引き継ぐ）</a>
+  </div>
+
+  <div class="live-board" id="board">
+    {% for pos in ["top", "left", "right", "bottom"] %}
+    <div class="seat-panel" data-pos="{{ pos }}">
+      <div class="seat-inner">
+        <div class="wind"></div>
+        <div class="name"></div>
+        <div class="score"></div>
+        <div class="delta"></div>
+        <div class="riichi-area"></div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="center-panel">
+      <div class="round" id="roundLabel"></div>
+      <div class="sub" id="honbaLabel"></div>
+      <div class="sub" id="kyotakuLabel"></div>
+    </div>
+  </div>
+
+  <div id="operatorTools" class="live-toolbar d-none">
+    <div class="d-flex flex-wrap gap-1">
+      <button type="button" class="btn btn-danger" data-open="ron">ロン</button>
+      <button type="button" class="btn btn-danger" data-open="tsumo">ツモ</button>
+      <button type="button" class="btn btn-secondary" data-open="draw">流局</button>
+      <button type="button" class="btn btn-outline-secondary" data-open="transfer">点棒移動</button>
+      <button type="button" class="btn btn-outline-secondary" id="undoButton">取り消し</button>
+      <button type="button" class="btn btn-outline-dark" id="finishButton">終了</button>
+    </div>
+  </div>
+  <div id="viewerTools" class="live-toolbar d-none text-center">
+    <small class="text-muted">閲覧中（点数は自動で更新されます）</small>
+    <button type="button" class="btn btn-link btn-sm" id="takeoverButton">操作を引き継ぐ</button>
+  </div>
+
+  <div id="actionError" class="text-danger small text-center mt-2"></div>
+
+  <div class="live-log">
+    <div class="text-muted small">直前の操作</div>
+    <div id="lastLog">-</div>
+    <details class="mt-1">
+      <summary class="small text-muted">履歴</summary>
+      <ol id="logList" class="small ps-3 mb-0"></ol>
+    </details>
+  </div>
+
+  <div class="view-options d-flex flex-wrap gap-3 align-items-center">
+    <label class="d-flex align-items-center gap-1">
+      下に表示:
+      <select id="viewSeat" class="form-select form-select-sm" style="width:auto;"></select>
+    </label>
+    <label class="d-flex align-items-center gap-1">
+      <input type="checkbox" id="tableMode"> 卓に置く表示
+    </label>
+    <button type="button" class="btn btn-link btn-sm text-danger ms-auto d-none" id="closeButton">卓を片付ける</button>
+  </div>
+</div>
+
+<!-- 和了・流局・点棒移動の入力 -->
+<div class="modal fade" id="actionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="actionModalTitle"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      </div>
+      <div class="modal-body" id="actionModalBody"></div>
+      <div class="modal-footer py-2 d-block">
+        <div id="actionPreview" class="preview-deltas mb-2"></div>
+        <div id="actionModalError" class="text-danger small mb-2"></div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">やめる</button>
+          <button type="button" class="btn btn-primary flex-fill" id="actionConfirm">確定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='live.js') }}"></script>
+{% endblock %}
