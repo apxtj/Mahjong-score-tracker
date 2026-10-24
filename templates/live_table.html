@@ -98,6 +98,48 @@
   .live-log { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
   .view-options { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
   .preview-deltas { font-size: 0.9rem; }
+
+  /* 全画面（集中）表示: 卓と操作ボタンだけを画面に固定し、スクロールや引っ張って更新を止める */
+  #focusExitButton { display: none; }
+  html.live-focus, body.live-focus {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100%;
+  }
+  body.live-focus nav.navbar { display: none; }
+  body.live-focus #liveApp {
+    position: fixed;
+    inset: 0;
+    z-index: 1040; /* モーダル（1055）より下 */
+    background: #0b2516;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body.live-focus .focus-hidden { display: none !important; }
+  body.live-focus #focusExitButton {
+    display: block;
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top));
+    right: 8px;
+    z-index: 1;
+  }
+  body.live-focus .live-board { width: 100%; margin-bottom: 0; }
+  body.live-focus #actionError { color: #fecaca !important; }
+  body.live-focus .live-toolbar .btn-outline-secondary,
+  body.live-focus .live-toolbar .btn-outline-dark {
+    color: #e5e7eb;
+    border-color: #9ca3af;
+  }
+  body.live-focus .live-toolbar .btn-outline-secondary:disabled,
+  body.live-focus .live-toolbar .btn-outline-dark:disabled { color: #6b7280; border-color: #4b5563; }
+  body.live-focus #viewerTools small { color: #bbf7d0 !important; }
 </style>
 
 <div id="liveApp" data-table-id="{{ table_id }}"
@@ -109,9 +151,14 @@
      data-index-url="{{ url_for('live.live_index') }}"
      data-input-url="{{ url_for('index') }}">
 
-  <div class="d-flex justify-content-between align-items-center mb-2" style="max-width:520px;margin:0 auto;">
+  <button type="button" class="btn btn-light btn-sm" id="focusExitButton">✕ 戻る</button>
+
+  <div class="d-flex justify-content-between align-items-center mb-2 focus-hidden" style="max-width:520px;margin:0 auto;">
     <a href="{{ url_for('live.live_index') }}" class="small text-muted text-decoration-none">← 卓の一覧</a>
-    <span class="small text-muted" id="operatorLabel"></span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="small text-muted" id="operatorLabel"></span>
+      <button type="button" class="btn btn-dark btn-sm" id="focusButton">⛶ 全画面</button>
+    </div>
   </div>
 
   <div id="finishedBanner" class="alert alert-success py-2 d-none" style="max-width:520px;margin:0 auto 8px;">
@@ -156,7 +203,7 @@
 
   <div id="actionError" class="text-danger small text-center mt-2"></div>
 
-  <div class="live-log">
+  <div class="live-log focus-hidden">
     <div class="text-muted small">直前の操作</div>
     <div id="lastLog">-</div>
     <details class="mt-1">
@@ -165,7 +212,7 @@
     </details>
   </div>
 
-  <div class="view-options d-flex flex-wrap gap-3 align-items-center">
+  <div class="view-options d-flex flex-wrap gap-3 align-items-center focus-hidden">
     <label class="d-flex align-items-center gap-1">
       下に表示:
       <select id="viewSeat" class="form-select form-select-sm" style="width:auto;"></select>

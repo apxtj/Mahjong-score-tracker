@@ -387,6 +387,68 @@ document.addEventListener('DOMContentLoaded', function () {
         modal.hide();
     });
 
+    // ---------------- 全画面（集中）表示 ----------------
+    // 卓と操作ボタンだけを固定表示し、スクロール・引っ張って更新・画面スリープを止める。
+    // 端末の「戻る」操作はページ移動ではなく全画面の解除にする。
+    let focusActive = false;
+    let wakeLock = null;
+
+    async function requestWakeLock() {
+        if (!('wakeLock' in navigator)) return;
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+        } catch (e) {
+            wakeLock = null; // 省電力モードなどで拒否されても表示は続ける
+        }
+    }
+
+    function releaseWakeLock() {
+        if (wakeLock) {
+            wakeLock.release().catch(() => {});
+            wakeLock = null;
+        }
+    }
+
+    function enterFocus() {
+        if (focusActive) return;
+        focusActive = true;
+        document.documentElement.classList.add('live-focus');
+        document.body.classList.add('live-focus');
+        const root = document.documentElement;
+        if (root.requestFullscreen) {
+            root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); // iPhone の Safari は非対応
+        }
+        requestWakeLock();
+        history.pushState({ liveFocus: true }, '');
+    }
+
+    function exitFocus(fromHistory) {
+        if (!focusActive) return;
+        focusActive = false;
+        document.documentElement.classList.remove('live-focus');
+        document.body.classList.remove('live-focus');
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        }
+        releaseWakeLock();
+        // 「✕ 戻る」で抜けたときは、入るときに積んだ履歴を戻しておく
+        if (!fromHistory && history.state && history.state.liveFocus) {
+            history.back();
+        }
+    }
+
+    document.getElementById('focusButton').addEventListener('click', enterFocus);
+    document.getElementById('focusExitButton').addEventListener('click', () => exitFocus(false));
+    window.addEventListener('popstate', () => exitFocus(true));
+    document.addEventListener('fullscreenchange', () => {
+        // Android の戻るジェスチャーなどで全画面が解除されたら、表示も元に戻す
+        if (!document.fullscreenElement && focusActive) exitFocus(false);
+    });
+    // 画面を切り替えるとスリープ防止が外れるので、戻ってきたら取り直す
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && focusActive) requestWakeLock();
+    });
+
     // ---------------- 開始 ----------------
     poll();
     setInterval(poll, 2000);
