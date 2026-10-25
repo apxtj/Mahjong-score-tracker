@@ -120,6 +120,29 @@
       radial-gradient(circle at center, #222 0 0.9px, transparent 1.3px) center / 4px 100% repeat-x,
       linear-gradient(180deg, #ffffff, #dcdcdc);
   }
+  /* どの席も同じ行数・同じ高さにして、左右（上下）の点数窓の位置を揃える
+     （親の「東（親）」だけ名前と1行に収まらず、点数窓が下にずれるのを防ぐ） */
+  .seat-panel .seat-inner > .wind { display: table; margin-left: auto; margin-right: auto; }
+  .seat-panel .seat-inner > .name {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .seat-panel .riichi-area {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .seat-panel .riichi-area > * { margin-top: 0; }
+  /* 左右の席は上端揃え（点数窓の位置が、下の行の有無で動かないように） */
+  .live-board:not(.table-mode) .seat-panel[data-pos="left"],
+  .live-board:not(.table-mode) .seat-panel[data-pos="right"] { justify-content: flex-start; }
   .seat-panel .riichi-button {
     margin-top: 4px;
     font-size: 0.72rem;
