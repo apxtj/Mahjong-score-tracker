@@ -178,6 +178,8 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('toInputButton').href = `${urls.inputUrl}?live=${tableId}`;
         }
 
+        if (focusActive) requestAnimationFrame(fitBoard);
+
         // 履歴
         document.getElementById('lastLog').textContent = state.log.length ? state.log[0].message : '-';
         const logList = document.getElementById('logList');
@@ -449,6 +451,43 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // 全画面のとき、卓全体が画面に収まる倍率で拡大縮小する（横画面はボタンを左右に逃がした残りの幅）
+    function fitBoard() {
+        const board = document.getElementById('board');
+        board.style.transform = '';
+        board.style.margin = '';
+        if (!focusActive) return;
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const boardWidth = board.offsetWidth;
+        const boardHeight = board.offsetHeight;
+        if (!boardWidth || !boardHeight) return;
+
+        let availableWidth;
+        let availableHeight;
+        if (viewportWidth > viewportHeight) {
+            const toolGroup = document.querySelector('#operatorTools:not(.d-none) .tool-group');
+            const sideWidth = toolGroup ? toolGroup.offsetWidth + 16 : 16;
+            availableWidth = viewportWidth - sideWidth * 2 - 16;
+            availableHeight = viewportHeight - 16;
+        } else {
+            // 縦画面: 卓以外（ボタン・下に表示・終了の案内など）の高さと「✕ 戻る」の分を差し引く
+            let reserved = 44 + 16;
+            ['finishedBanner', 'operatorTools', 'viewerTools', 'actionError', 'viewOptions'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.offsetHeight) reserved += el.offsetHeight + 8;
+            });
+            availableWidth = viewportWidth - 16;
+            availableHeight = viewportHeight - reserved;
+        }
+
+        const scale = Math.max(0.4, Math.min(availableWidth / boardWidth, availableHeight / boardHeight, 1.5));
+        board.style.transform = `scale(${scale})`;
+        // transform は場所を取る大きさを変えないので、余白で見た目の大きさに合わせる
+        board.style.margin = `${(scale - 1) * boardHeight / 2}px ${(scale - 1) * boardWidth / 2}px`;
+    }
+
     function enterFocus() {
         if (focusActive) return;
         focusActive = true;
@@ -460,6 +499,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         requestWakeLock();
         history.pushState({ liveFocus: true }, '');
+        requestAnimationFrame(fitBoard);
     }
 
     function exitFocus(fromHistory) {
@@ -471,6 +511,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.exitFullscreen().catch(() => {});
         }
         releaseWakeLock();
+        fitBoard();
         // 「✕ 戻る」で抜けたときは、入るときに積んだ履歴を戻しておく
         if (!fromHistory && history.state && history.state.liveFocus) {
             history.back();
@@ -484,6 +525,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // Android の戻るジェスチャーなどで全画面が解除されたら、表示も元に戻す
         if (!document.fullscreenElement && focusActive) exitFocus(false);
     });
+    // 回転・全画面への切り替え・アドレスバーの出入りで画面の大きさが変わったら合わせ直す
+    window.addEventListener('resize', () => requestAnimationFrame(fitBoard));
+    window.addEventListener('orientationchange', () => setTimeout(fitBoard, 300));
+
     // 画面を切り替えるとスリープ防止が外れるので、戻ってきたら取り直す
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden && focusActive) requestWakeLock();

@@ -189,6 +189,8 @@
   .live-board.table-mode .seat-panel[data-pos="left"] .seat-inner { transform: translate(-50%, -50%) rotate(90deg); }
   .live-board.table-mode .seat-panel[data-pos="right"] .seat-inner { transform: translate(-50%, -50%) rotate(-90deg); }
   .live-toolbar { max-width: 520px; margin: 0 auto; }
+  .tool-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tool-group { display: contents; }
   .live-toolbar .btn { flex: 1 1 30%; }
   .live-log { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
   .view-options { max-width: 520px; margin: 8px auto 0; font-size: 0.85rem; }
@@ -235,6 +237,73 @@
   body.live-focus .live-toolbar .btn-outline-secondary:disabled,
   body.live-focus .live-toolbar .btn-outline-dark:disabled { color: #6b7280; border-color: #4b5563; }
   body.live-focus #viewerTools small { color: #bbf7d0 !important; }
+  body.live-focus .view-options { color: #e5e7eb; justify-content: center; margin-top: 0; }
+  /* 卓は live.js が画面に収まる倍率で縮小する（transform: scale） */
+  body.live-focus .live-board { transform-origin: center center; }
+
+  /* 横画面の全画面: 卓を中央に、操作ボタンを左右に振り分けて1画面に収める */
+  @media (orientation: landscape) {
+    body.live-focus #liveApp {
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+               max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    }
+    body.live-focus .live-board { width: 380px; flex: 0 0 auto; }
+    body.live-focus #operatorTools {
+      position: absolute;
+      inset: 0;
+      max-width: none;
+      margin: 0;
+      padding: 52px max(8px, env(safe-area-inset-right)) 12px max(8px, env(safe-area-inset-left));
+      pointer-events: none;
+    }
+    body.live-focus #operatorTools .tool-row {
+      height: 100%;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      align-items: center;
+    }
+    body.live-focus #operatorTools .tool-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 112px;
+      pointer-events: auto;
+    }
+    body.live-focus #operatorTools .tool-group .btn { flex: none; padding: 0.6rem 0.4rem; }
+    body.live-focus .view-options {
+      position: absolute;
+      top: max(8px, env(safe-area-inset-top));
+      left: max(8px, env(safe-area-inset-left));
+      margin: 0;
+      z-index: 2;
+    }
+    body.live-focus #viewerTools {
+      position: absolute;
+      bottom: max(8px, env(safe-area-inset-bottom));
+      left: max(8px, env(safe-area-inset-left));
+      max-width: 30%;
+      margin: 0;
+      text-align: left;
+    }
+    body.live-focus #actionError {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      margin: 0;
+    }
+    body.live-focus #finishedBanner {
+      position: absolute;
+      top: max(8px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      width: min(60%, 420px);
+    }
+  }
 </style>
 
 <div id="liveApp" data-table-id="{{ table_id }}"
@@ -284,13 +353,18 @@
   </div>
 
   <div id="operatorTools" class="live-toolbar d-none">
-    <div class="d-flex flex-wrap gap-1">
-      <button type="button" class="btn btn-danger" data-open="ron">ロン</button>
-      <button type="button" class="btn btn-danger" data-open="tsumo">ツモ</button>
-      <button type="button" class="btn btn-secondary" data-open="draw">流局</button>
-      <button type="button" class="btn btn-outline-secondary" data-open="transfer">点棒移動</button>
-      <button type="button" class="btn btn-outline-secondary" id="undoButton">取り消し</button>
-      <button type="button" class="btn btn-outline-dark" id="finishButton">終了</button>
+    <!-- 縦画面では3つずつ2段、横画面の全画面では卓の左右に振り分ける -->
+    <div class="tool-row">
+      <div class="tool-group tool-left">
+        <button type="button" class="btn btn-danger" data-open="ron">ロン</button>
+        <button type="button" class="btn btn-danger" data-open="tsumo">ツモ</button>
+        <button type="button" class="btn btn-secondary" data-open="draw">流局</button>
+      </div>
+      <div class="tool-group tool-right">
+        <button type="button" class="btn btn-outline-secondary" data-open="transfer">点棒移動</button>
+        <button type="button" class="btn btn-outline-secondary" id="undoButton">取り消し</button>
+        <button type="button" class="btn btn-outline-dark" id="finishButton">終了</button>
+      </div>
     </div>
   </div>
   <div id="viewerTools" class="live-toolbar d-none text-center">
@@ -309,15 +383,15 @@
     </details>
   </div>
 
-  <div class="view-options d-flex flex-wrap gap-3 align-items-center focus-hidden">
+  <div class="view-options d-flex flex-wrap gap-3 align-items-center" id="viewOptions">
     <label class="d-flex align-items-center gap-1">
       下に表示:
       <select id="viewSeat" class="form-select form-select-sm" style="width:auto;"></select>
     </label>
-    <label class="d-flex align-items-center gap-1">
+    <label class="d-flex align-items-center gap-1 focus-hidden">
       <input type="checkbox" id="tableMode"> 卓に置く表示
     </label>
-    <button type="button" class="btn btn-link btn-sm text-danger ms-auto d-none" id="closeButton">卓を片付ける</button>
+    <button type="button" class="btn btn-link btn-sm text-danger ms-auto d-none focus-hidden" id="closeButton">卓を片付ける</button>
   </div>
 </div>
 
