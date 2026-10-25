@@ -85,6 +85,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!value) return '';
         return (value > 0 ? '+' : '') + value.toLocaleString();
     }
+    function stickIcon(className) {
+        const stick = document.createElement('span');
+        stick.className = `stick ${className}`;
+        stick.setAttribute('aria-hidden', 'true');
+        return stick;
+    }
     function names() {
         return current.state.players.map(p => p.name);
     }
@@ -134,8 +140,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         document.getElementById('roundLabel').textContent = state.finished ? '終局' : current.round_label;
-        document.getElementById('honbaLabel').textContent = `${state.honba}本場`;
-        document.getElementById('kyotakuLabel').textContent = `供託 ${formatPoints(state.kyotaku)}`;
+        // 本場は100点棒、供託は1000点棒のアイコン付きで表示
+        document.getElementById('honbaLabel').replaceChildren(stickIcon('stick-100'), `${state.honba}本場`);
+        document.getElementById('kyotakuLabel').replaceChildren(stickIcon('stick-1000'), `供託 ${formatPoints(state.kyotaku)}`);
         document.getElementById('operatorLabel').textContent = `記録係: ${current.operator_name}`;
 
         document.getElementById('operatorTools').classList.toggle('d-none', !current.can_operate);

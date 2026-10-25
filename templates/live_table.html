@@ -3,28 +3,38 @@
 {% block title %}ライブ卓{% endblock %}
 
 {% block content %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap">
 <style>
+  /* ===== 雀卓の見た目（木の縁・ラシャ・操作盤・LED表示） ===== */
   .live-board {
+    --felt-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.45 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     display: grid;
-    grid-template-columns: 1fr 1.3fr 1fr;
+    grid-template-columns: 1fr 1.25fr 1fr;
     grid-template-rows: auto auto auto;
     grid-template-areas:
       ".    top    ."
       "left center right"
       ".    bottom .";
     gap: 6px;
-    background: #14532d;
-    border-radius: 16px;
-    padding: 10px;
+    padding: 8px;
     margin: 0 auto 10px;
     max-width: 520px;
+    /* 縁は木目、内側はラシャ（布目のノイズ＋中央が明るいグラデーション） */
+    border: 14px solid transparent;
+    border-radius: 22px;
+    background:
+      var(--felt-noise) padding-box,
+      radial-gradient(ellipse at 50% 42%, #23864d 0%, #17693a 50%, #0e4a28 100%) padding-box,
+      linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 35%, rgba(0, 0, 0, 0.3)) border-box,
+      repeating-linear-gradient(100deg, #6b4423 0 5px, #5a381c 5px 9px, #7a4e2a 9px 12px, #50321a 12px 17px) border-box;
+    box-shadow:
+      inset 0 0 22px rgba(0, 0, 0, 0.55),
+      0 0 0 2px #2b1a0c,
+      0 12px 28px rgba(0, 0, 0, 0.45);
   }
   .seat-panel {
-    background: #0f3d22;
-    color: #f0fdf4;
-    border: 2px solid transparent;
-    border-radius: 12px;
-    padding: 8px 4px;
+    color: #ecfdf5;
+    padding: 4px 2px;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -35,49 +45,121 @@
   .seat-panel[data-pos="left"] { grid-area: left; }
   .seat-panel[data-pos="right"] { grid-area: right; }
   .seat-panel[data-pos="bottom"] { grid-area: bottom; }
-  .seat-panel.dealer { border-color: #f87171; }
-  .seat-panel .wind { font-size: 0.85rem; opacity: 0.85; }
-  .seat-panel.dealer .wind { color: #fecaca; font-weight: 700; }
-  .seat-panel .name { font-size: 0.9rem; word-break: break-all; }
-  .seat-panel .score {
-    font-family: "SFMono-Regular", Consolas, monospace;
-    font-size: 1.55rem;
-    font-weight: 700;
-    color: #fde68a;
-    letter-spacing: 0.02em;
-  }
-  .seat-panel .score.negative { color: #fca5a5; }
-  .seat-panel .riichi-badge {
+  /* 自風は卓のランプ風。親は赤く点灯 */
+  .seat-panel .wind {
     display: inline-block;
-    background: #fef3c7;
-    color: #92400e;
+    min-width: 1.7em;
+    margin: 0 auto 2px;
+    padding: 0 6px;
     border-radius: 999px;
-    font-size: 0.7rem;
-    padding: 0 8px;
+    font-size: 0.8rem;
     font-weight: 700;
+    color: #9ca3af;
+    background: radial-gradient(circle at 50% 35%, #3f3f46, #18181b);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+  .seat-panel.dealer .wind {
+    color: #fff;
+    background: radial-gradient(circle at 50% 35%, #ff6b6b, #b91c1c);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  }
+  .seat-panel .name {
+    display: inline-block;
+    margin: 0 auto 3px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    word-break: break-all;
+    color: #f0fdf4;
+    background: rgba(0, 0, 0, 0.22);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+  }
+  /* 点数は液晶窓に光るLED数字 */
+  .seat-panel .score {
+    display: inline-block;
+    margin: 0 auto;
+    padding: 1px 7px;
+    border-radius: 6px;
+    font-family: "Share Tech Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 1.4rem;
+    line-height: 1.25;
+    letter-spacing: 0.06em;
+    color: #ff8a3d;
+    text-shadow: 0 0 6px rgba(255, 138, 61, 0.8);
+    background: linear-gradient(180deg, #050705, #10140f);
+    border: 2px solid #1c1f1b;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.95), 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+  .seat-panel .score.negative { color: #ff4040; text-shadow: 0 0 6px rgba(255, 64, 64, 0.85); }
+  /* リーチ棒（中央に赤い点の白い棒） */
+  .seat-panel .riichi-badge,
+  .stick {
+    display: inline-block;
+    vertical-align: middle;
+    border-radius: 5px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    font-size: 0;
+  }
+  .seat-panel .riichi-badge {
+    width: 72px;
+    height: 9px;
+    margin-top: 4px;
+    background:
+      radial-gradient(circle at center, #d40000 0 3px, transparent 3.5px),
+      linear-gradient(180deg, #ffffff, #dcdcdc);
+  }
+  .stick { width: 30px; height: 6px; margin-right: 4px; }
+  .stick-1000 {
+    background:
+      radial-gradient(circle at center, #d40000 0 2px, transparent 2.5px),
+      linear-gradient(180deg, #ffffff, #dcdcdc);
+  }
+  .stick-100 {
+    background:
+      radial-gradient(circle at center, #222 0 0.9px, transparent 1.3px) center / 4px 100% repeat-x,
+      linear-gradient(180deg, #ffffff, #dcdcdc);
   }
   .seat-panel .riichi-button {
     margin-top: 4px;
-    font-size: 0.75rem;
-    padding: 2px 8px;
+    font-size: 0.72rem;
+    padding: 1px 8px;
+    color: #d1fae5;
+    border-color: rgba(209, 250, 229, 0.6);
   }
-  .seat-panel .delta { font-size: 0.8rem; min-height: 1.1em; }
+  .seat-panel .delta { font-size: 0.8rem; min-height: 1.1em; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
   .seat-panel .delta.plus { color: #86efac; }
   .seat-panel .delta.minus { color: #fca5a5; }
+  /* 中央は全自動卓の操作盤風 */
   .center-panel {
     grid-area: center;
-    background: #052e16;
-    color: #ecfdf5;
-    border-radius: 12px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 6px;
+    padding: 8px 4px;
+    border-radius: 14px;
+    color: #cbd5e1;
+    background: linear-gradient(145deg, #30353c 0%, #111418 55%, #050607 100%);
+    border: 1px solid #000;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 -3px 8px rgba(0, 0, 0, 0.7),
+      0 4px 10px rgba(0, 0, 0, 0.5);
   }
-  .center-panel .round { font-size: 1.3rem; font-weight: 700; }
-  .center-panel .sub { font-size: 0.8rem; opacity: 0.9; }
+  .center-panel .round {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #ffb347;
+    text-shadow: 0 0 8px rgba(255, 179, 71, 0.75);
+    margin-bottom: 2px;
+  }
+  .center-panel .sub {
+    font-family: "Share Tech Mono", "SFMono-Regular", Consolas, monospace;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
   /* 卓に置く表示: 各自が自分の側から読めるよう、席の表示をまとめて回転 */
   .live-board.table-mode { grid-template-columns: 1.25fr 1fr 1.25fr; }
   .live-board.table-mode .seat-panel { position: relative; }
@@ -111,7 +193,7 @@
     position: fixed;
     inset: 0;
     z-index: 1040; /* モーダル（1055）より下 */
-    background: #0b2516;
+    background: radial-gradient(ellipse at 50% 40%, #2b2b2b, #0a0a0a 75%);
     display: flex;
     flex-direction: column;
     justify-content: center;
