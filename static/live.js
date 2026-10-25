@@ -118,6 +118,20 @@ document.addEventListener('DOMContentLoaded', function () {
             const scoreEl = panel.querySelector('.score');
             scoreEl.textContent = formatPoints(score);
             scoreEl.classList.toggle('negative', score < 0);
+            // 下に表示している人との点差（本人の席には出さない）
+            const gapEl = panel.querySelector('.gap');
+            if (seat === bottomSeat) {
+                gapEl.replaceChildren();
+                gapEl.className = 'gap';
+            } else {
+                const gap = score - state.scores[bottomSeat];
+                const label = document.createElement('span');
+                label.className = 'gap-label';
+                label.textContent = '差';
+                gapEl.replaceChildren(label, gap === 0 ? '±0' : formatDelta(gap));
+                gapEl.className = 'gap ' + (gap > 0 ? 'ahead' : gap < 0 ? 'behind' : 'even');
+            }
+
             const deltaEl = panel.querySelector('.delta');
             deltaEl.textContent = formatDelta(lastDeltas[seat]);
             deltaEl.className = 'delta' + (lastDeltas[seat] > 0 ? ' plus' : lastDeltas[seat] < 0 ? ' minus' : '');
