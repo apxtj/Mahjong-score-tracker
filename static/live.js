@@ -456,13 +456,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const board = document.getElementById('board');
         board.style.transform = '';
         board.style.margin = '';
+        board.style.width = '';
         if (!focusActive) return;
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
-        const boardWidth = board.offsetWidth;
-        const boardHeight = board.offsetHeight;
-        if (!boardWidth || !boardHeight) return;
 
         let availableWidth;
         let availableHeight;
@@ -471,6 +469,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const sideWidth = toolGroup ? toolGroup.offsetWidth + 16 : 16;
             availableWidth = viewportWidth - sideWidth * 2 - 16;
             availableHeight = viewportHeight - 16;
+            // 横画面は、ボタン列の間いっぱいの横長の卓にする（広すぎる画面では上限あり）
+            board.style.width = `${Math.min(availableWidth, 900)}px`;
         } else {
             // 縦画面: 卓以外（ボタン・下に表示・終了の案内など）の高さと「✕ 戻る」の分を差し引く
             let reserved = 44 + 16;
@@ -482,6 +482,9 @@ document.addEventListener('DOMContentLoaded', function () {
             availableHeight = viewportHeight - reserved;
         }
 
+        const boardWidth = board.offsetWidth;
+        const boardHeight = board.offsetHeight;
+        if (!boardWidth || !boardHeight) return;
         const scale = Math.max(0.4, Math.min(availableWidth / boardWidth, availableHeight / boardHeight, 1.5));
         board.style.transform = `scale(${scale})`;
         // transform は場所を取る大きさを変えないので、余白で見た目の大きさに合わせる

@@ -250,7 +250,35 @@
       padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
                max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     }
-    body.live-focus .live-board { width: 380px; flex: 0 0 auto; }
+    /* 卓はボタン列の間いっぱいの横長に（幅は live.js が設定）、文字も大きく */
+    body.live-focus .live-board {
+      flex: 0 0 auto;
+      max-width: none;
+      grid-template-columns: 1fr 1.05fr 1fr;
+      gap: 4px 8px;
+      padding: 6px 10px;
+    }
+    body.live-focus .seat-panel { min-height: 0; padding: 2px; }
+    body.live-focus .seat-panel .score { font-size: clamp(1.5rem, 8.5vh, 2.6rem); padding: 0 10px; }
+    body.live-focus .seat-panel .name { font-size: clamp(0.85rem, 4.2vh, 1.15rem); }
+    body.live-focus .seat-panel .wind { font-size: clamp(0.8rem, 3.8vh, 1.05rem); }
+    body.live-focus .seat-panel .gap,
+    body.live-focus .seat-panel .delta { font-size: clamp(0.75rem, 3.6vh, 1rem); }
+    body.live-focus .center-panel .round { font-size: clamp(1.3rem, 8vh, 2.3rem); }
+    body.live-focus .center-panel .sub { font-size: clamp(0.8rem, 3.8vh, 1.05rem); }
+    /* 上下の人は「風・名前・点数」を横1行に並べて高さを節約する */
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="top"] .seat-inner,
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="bottom"] .seat-inner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      column-gap: 8px;
+    }
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="top"] .seat-inner > *,
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="bottom"] .seat-inner > * { margin: 0; }
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="top"] .riichi-area,
+    body.live-focus .live-board:not(.table-mode) .seat-panel[data-pos="bottom"] .riichi-area { flex-basis: 100%; }
     body.live-focus #operatorTools {
       position: absolute;
       inset: 0;
